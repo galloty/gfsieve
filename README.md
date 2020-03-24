@@ -10,9 +10,9 @@ gfsieve is a highly optimised GPU application, created in 2020.
 ## Build
 
 gfsieve is a preliminary version.  
-This version was compiled with gcc and tested on Windows.  
+This version was compiled with gcc and tested on Windows and Linux (Ubuntu).  
 An OpenCL SDK is not required. OpenCL header files are included in the project and the application can be linked with the dynamic OpenCL library of the OS.
 
 ## TODO
 
-- many things...
+- asm (PTX) on Nvidia for carry propagation
