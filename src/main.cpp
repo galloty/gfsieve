@@ -1,13 +1,13 @@
 /*
 Copyright 2020, Yves Gallot
 
-gsieve is free source code, under the MIT license (see LICENSE). You can redistribute, use and/or modify it.
+gfsieve is free source code, under the MIT license (see LICENSE). You can redistribute, use and/or modify it.
 Please give feedback to the authors if improvement is realized. It is distributed in the hope that it will be useful.
 */
 
 #include "ocl.h"
 #include "engine.h"
-#include "gsieve.h"
+#include "gfsieve.h"
 
 #include <cstdlib>
 #include <stdexcept>
@@ -28,7 +28,7 @@ private:
 private:
 	static void quit(int)
 	{
-		gsieve::getInstance().quit();
+		gfsieve::getInstance().quit();
 	}
 
 private:
@@ -87,9 +87,9 @@ private:
 #endif
 
 		std::ostringstream ss;
-		ss << "gsieve 0.1.0 " << sysver << ssc.str() << std::endl;
+		ss << "gfsieve 0.1.0 " << sysver << ssc.str() << std::endl;
 		ss << "Copyright (c) 2020, Yves Gallot" << std::endl;
-		ss << "gsieve is free source code, under the MIT license." << std::endl;
+		ss << "gfsieve is free source code, under the MIT license." << std::endl;
 		if (nl) ss << std::endl;
 		return ss.str();
 	}
@@ -98,10 +98,10 @@ private:
 	static std::string usage()
 	{
 		std::ostringstream ss;
-		ss << "Usage: gsieve <n> <p_min> <p_max> [options]" << std::endl;
+		ss << "Usage: gfsieve <n> <p_min> <p_max> [options]" << std::endl;
 		ss << "  <n>                     GFN exponent: b^{2^n} + 1" << std::endl;
-		ss << "  <p_min>                 the start of the p range, in Pi (2^50) values" << std::endl;
-		ss << "  <p_max>                 the end of the p range, in Pi (2^50) values" << std::endl;
+		ss << "  <p_min>                 the start of the p range, in P (10^15) values" << std::endl;
+		ss << "  <p_max>                 the end of the p range, in P (10^15) values" << std::endl;
 		ss << "  -d <n> or --device <n>  set device number=<n> (default 0)" << std::endl;
 		ss << "  -v or -V                print the startup banner and immediately exit" << std::endl;
 		ss << std::endl;
@@ -128,7 +128,7 @@ public:
 		ocl::platform platform;
 		platform.displayDevices();
 
-		// if (args.size() < 3) return;
+		if (args.size() < 3) return;
 
 		// parse args
 		const uint32_t n = (args.size() > 0) ? std::atoi(args[0].c_str()) : 21;
@@ -147,11 +147,11 @@ public:
 			}
 		}
 
-		if ((n < 16) || (n > 24)) return;
+		if ((n < 12) || (n > 24)) return;
 		if (p_min < 1) return;
 		if (p_max <= p_min) return;
 
-		gsieve & sieve = gsieve::getInstance();
+		gfsieve & sieve = gfsieve::getInstance();
 
 		engine engine(platform, d);
 		sieve.check(n, p_min, p_max, engine);

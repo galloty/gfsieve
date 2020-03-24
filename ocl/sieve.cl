@@ -1,9 +1,27 @@
 /*
 Copyright 2020, Yves Gallot
 
-proth20 is free source code, under the MIT license (see LICENSE). You can redistribute, use and/or modify it.
+gfsieve is free source code, under the MIT license (see LICENSE). You can redistribute, use and/or modify it.
 Please give feedback to the authors if improvement is realized. It is distributed in the hope that it will be useful.
 */
+
+#if !defined (__OPENCL_VERSION__)
+	#define DOUBLE_EXTENSION	1
+#elif defined (cl_khr_fp64)
+	#define DOUBLE_EXTENSION	1
+	#if __OPENCL_VERSION__ < 120
+		#pragma OPENCL EXTENSION cl_khr_fp64: enable
+	#endif
+#elif defined (cl_amd_fp64)
+	#define DOUBLE_EXTENSION	1
+	#pragma OPENCL EXTENSION cl_amd_fp64: enable
+#endif
+
+#if !defined (DOUBLE_EXTENSION)
+	#error "Double precision floating point not supported by OpenCL implementation."
+#endif
+
+#pragma OPENCL FP_CONTRACT OFF
 
 typedef uint	uint32;
 typedef ulong	uint64;

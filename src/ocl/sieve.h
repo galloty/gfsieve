@@ -1,7 +1,7 @@
 /*
 Copyright 2020, Yves Gallot
 
-gsieve is free source code, under the MIT license (see LICENSE). You can redistribute, use and/or modify it.
+gfsieve is free source code, under the MIT license (see LICENSE). You can redistribute, use and/or modify it.
 Please give feedback to the authors if improvement is realized. It is distributed in the hope that it will be useful.
 */
 
@@ -9,9 +9,27 @@ static const char * const src_ocl_sieve = \
 "/*\n" \
 "Copyright 2020, Yves Gallot\n" \
 "\n" \
-"proth20 is free source code, under the MIT license (see LICENSE). You can redistribute, use and/or modify it.\n" \
+"gfsieve is free source code, under the MIT license (see LICENSE). You can redistribute, use and/or modify it.\n" \
 "Please give feedback to the authors if improvement is realized. It is distributed in the hope that it will be useful.\n" \
 "*/\n" \
+"\n" \
+"#if !defined (__OPENCL_VERSION__)\n" \
+"	#define DOUBLE_EXTENSION	1\n" \
+"#elif defined (cl_khr_fp64)\n" \
+"	#define DOUBLE_EXTENSION	1\n" \
+"	#if __OPENCL_VERSION__ < 120\n" \
+"		#pragma OPENCL EXTENSION cl_khr_fp64: enable\n" \
+"	#endif\n" \
+"#elif defined (cl_amd_fp64)\n" \
+"	#define DOUBLE_EXTENSION	1\n" \
+"	#pragma OPENCL EXTENSION cl_amd_fp64: enable\n" \
+"#endif\n" \
+"\n" \
+"#if !defined (DOUBLE_EXTENSION)\n" \
+"	#error \"Double precision floating point not supported by OpenCL implementation.\"\n" \
+"#endif\n" \
+"\n" \
+"#pragma OPENCL FP_CONTRACT OFF\n" \
 "\n" \
 "typedef uint	uint32;\n" \
 "typedef ulong	uint64;\n" \

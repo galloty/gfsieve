@@ -1,7 +1,7 @@
 /*
 Copyright 2020, Yves Gallot
 
-gsieve is free source code, under the MIT license (see LICENSE). You can redistribute, use and/or modify it.
+gfsieve is free source code, under the MIT license (see LICENSE). You can redistribute, use and/or modify it.
 Please give feedback to the authors if improvement is realized. It is distributed in the hope that it will be useful.
 */
 
@@ -13,21 +13,22 @@ Please give feedback to the authors if improvement is realized. It is distribute
 
 #include <thread>
 #include <chrono>
+#include <cmath>
 
 #include "ocl/sieve.h"
 
-class gsieve
+class gfsieve
 {
 private:
-	struct deleter { void operator()(const gsieve * const p) { delete p; } };
+	struct deleter { void operator()(const gfsieve * const p) { delete p; } };
 
 public:
-	gsieve() {}
-	virtual ~gsieve() {}
+	gfsieve() {}
+	virtual ~gfsieve() {}
 
-	static gsieve & getInstance()
+	static gfsieve & getInstance()
 	{
-		static std::unique_ptr<gsieve, deleter> pInstance(new gsieve());
+		static std::unique_ptr<gfsieve, deleter> pInstance(new gfsieve());
 		return *pInstance;
 	}
 
@@ -38,7 +39,7 @@ protected:
 	volatile bool _quit = false;
 
 private:
-	bool readOpenCL(const char * const clFileName, const char * const headerFileName, const char * const varName, std::stringstream & src) const
+	static bool readOpenCL(const char * const clFileName, const char * const headerFileName, const char * const varName, std::stringstream & src)
 	{
 		std::ifstream clFile(clFileName);
 		if (!clFile.is_open()) return false;
@@ -49,7 +50,7 @@ private:
 
 		hFile << "/*" << std::endl;
 		hFile << "Copyright 2020, Yves Gallot" << std::endl << std::endl;
-		hFile << "gsieve is free source code, under the MIT license (see LICENSE). You can redistribute, use and/or modify it." << std::endl;
+		hFile << "gfsieve is free source code, under the MIT license (see LICENSE). You can redistribute, use and/or modify it." << std::endl;
 		hFile << "Please give feedback to the authors if improvement is realized. It is distributed in the hope that it will be useful." << std::endl;
 		hFile << "*/" << std::endl << std::endl;
 
@@ -76,22 +77,24 @@ private:
 	}
 
 private:
-	void uint128_get_str(const __uint128_t & x, char * const str)
+	static void uint96_get_str(const uint64_t x_l, const uint32_t x_h, char * const str)
 	{
 		char dgt[32];
-		__uint128_t t = x;
+		uint64_t l = x_l & ((uint64_t(1) << 48) - 1), h = (uint64_t(x_h) << 16) | (x_l >> 48);
 		size_t n = 32;
-		while (t != 0)
+		while ((l != 0) || (h != 0))
 		{
-			--n; dgt[n] = '0' + char(t % 10);
-			t /= 10;
+			l |= (h % 10) << 48;
+			h /= 10;
+			--n; dgt[n] = '0' + char(l % 10);
+			l /= 10;
 		}
 		for (size_t i = n; i < 32; ++i) str[i - n] = dgt[i];
 		str[32 - n] = '\0';
 	}
 
 public:
-	bool check(const uint32_t n, const uint32_t p_min, const uint32_t p_max, engine & engine)
+	bool check(const uint32_t n, const uint32_t p_min, const uint32_t p_max, engine & engine) const
 	{
 		const int log2_prime_size = 17;
 		const size_t prime_size = size_t(1) << log2_prime_size;
@@ -110,16 +113,16 @@ public:
 
 		engine.clearCounters();
 
-		const uint64_t i_min = uint64_t(p_min) << (50 - (n + 1) - log2_prime_size);
-		/*const*/ uint64_t i_max = uint64_t(p_max) << (50 - (n + 1) - log2_prime_size);
-		const uint64_t i_size = i_max - i_min + 1;
+		// engine.setProfiling(true);
 
-		// std::cout << "i_min = " << i_min << ", i_max = " << i_max << ", " << i_size << std::endl;
-		// i_max = i_min + 10;
+		const double f = 1e15 / pow(2.0, double(n + 1 + log2_prime_size));
+		const uint64_t i_min = uint64_t(floor(p_min * f)), i_max = uint64_t(ceil(p_max * f));
 
 		const timer::time startTime = timer::currentTime();
+		timer::time displayTime = startTime;
 
-		for (uint64_t i = i_min; i <= i_max; ++i)
+		uint64_t cnt = 0;
+		for (uint64_t i = i_min; i < i_max; ++i)
 		{
 			engine.checkPrimes(prime_size, i);
 			// const size_t prime_count = engine.readPrimeCount();
@@ -129,14 +132,21 @@ public:
 			// const size_t factor_count = engine.readFactorCount();
 			// std::cout << factor_count << " factors" << std::endl;
 			engine.clearPrimes();
+			++cnt;
 			if (_quit) break;
-			// std::cout << (i - i_min) * 100.0 / i_size << std::endl;
+			if (timer::diffTime(timer::currentTime(), displayTime) > 1)
+			{
+				displayTime = timer::currentTime();
+				std::ostringstream ss; ss << std::setprecision(3) << " " << cnt * 100.0 / (i_max - i_min) << "% done    \r";
+				std::cout << ss.str();
+			}
 		}
 
+		std::cout << " Terminating...         \r";
 		const size_t factor_count = engine.readFactorCount();
-		const double elapsed_time = timer::diffTime(timer::currentTime(), startTime) * i_size / (i_max - i_min + 1);
+		const double elapsed_time = timer::diffTime(timer::currentTime(), startTime);
 		const std::string runtime = timer::formatTime(elapsed_time);
-		std::ostringstream ss; ss << std::setprecision(3) << 86400 / elapsed_time << " Pi/day";
+		std::ostringstream ss; ss << std::setprecision(3) << 86400 / (elapsed_time * (i_max - i_min) / cnt) << " P/day";
 
 		std::cout << factor_count << " factors, time = " << runtime << ", " << ss.str() << std::endl;
 
@@ -147,6 +157,8 @@ public:
 		std::vector<cl_ulong2> factor(factor_count);
 		engine.readFactors(factor.data(), factor_count);
 
+		// engine.displayProfiles(cnt);
+
 		engine.releaseKernels();
 		engine.releaseMemory();
 		engine.clearProgram();
@@ -156,9 +168,8 @@ public:
 		{
 			for (const cl_ulong2 f : factor)
 			{
-				const uint32_t b = uint32_t(f.s[1] >> 32), f_h = uint32_t(f.s[1]);
-				const __uint128_t p = (__uint128_t(f_h) << 64) | f.s[0];
-				char str[32]; uint128_get_str(p, str);
+				const uint32_t b = uint32_t(f.s[1] >> 32);
+				char str[32]; uint96_get_str(f.s[0], uint32_t(f.s[1]), str);
 				resFile << str << " | " << b << "^" << N << "+1" << std::endl;
 			}
 			resFile.close();

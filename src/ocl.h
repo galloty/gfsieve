@@ -1,7 +1,7 @@
 /*
 Copyright 2020, Yves Gallot
 
-gvieve is free source code, under the MIT license (see LICENSE). You can redistribute, use and/or modify it.
+gfsieve is free source code, under the MIT license (see LICENSE). You can redistribute, use and/or modify it.
 Please give feedback to the authors if improvement is realized. It is distributed in the hope that it will be useful.
 */
 
@@ -30,7 +30,7 @@ namespace ocl
 {
 
 // #define ocl_debug		1
-#define ocl_fast_exec		1
+//#define ocl_fast_exec		1
 #define ocl_device_type		CL_DEVICE_TYPE_GPU	// CL_DEVICE_TYPE_ALL
 
 class oclObject
@@ -124,6 +124,25 @@ private:
 	};
 	std::vector<deviceDesc> _devices;
 
+private:
+	static bool getDoubleSupport(const cl_device_id device)
+	{
+		cl_uint dWidth; clGetDeviceInfo(device, CL_DEVICE_PREFERRED_VECTOR_WIDTH_DOUBLE, sizeof(cl_uint), &dWidth, nullptr);
+		if (dWidth == 0) return false;
+
+		bool doubleSupport = false;
+		size_t extSize; clGetDeviceInfo(device, CL_DEVICE_EXTENSIONS, 0, nullptr, &extSize);
+		if (extSize > 0)
+		{
+			std::vector<char> extensions(extSize + 1);
+			clGetDeviceInfo(device, CL_DEVICE_EXTENSIONS, extSize, extensions.data(), nullptr);
+			extensions[extSize] = '\0';
+			for (size_t i = 0; i < extSize; ++i) extensions[i] = tolower(extensions[i]);
+			doubleSupport = (strstr(extensions.data(), "fp64") != nullptr);
+		}
+		return doubleSupport;
+	}
+
 public:
 	platform()
 	{
@@ -144,15 +163,18 @@ public:
 			{
 				for (cl_uint d = 0; d < num_devices; ++d)
 				{
-					char deviceName[1024]; oclFatal(clGetDeviceInfo(devices[d], CL_DEVICE_NAME, 1024, deviceName, nullptr));
-					char deviceVendor[1024]; oclFatal(clGetDeviceInfo(devices[d], CL_DEVICE_VENDOR, 1024, deviceVendor, nullptr));
+					if (getDoubleSupport(devices[d]))
+					{
+						char deviceName[1024]; oclFatal(clGetDeviceInfo(devices[d], CL_DEVICE_NAME, 1024, deviceName, nullptr));
+						char deviceVendor[1024]; oclFatal(clGetDeviceInfo(devices[d], CL_DEVICE_VENDOR, 1024, deviceVendor, nullptr));
 
-					std::stringstream ss; ss << "device '" << deviceName << "', vendor '" << deviceVendor << "', platform '" << platformName << "'";
-					deviceDesc device;
-					device.platform_id = platforms[p];
-					device.device_id = devices[d];
-					device.name = ss.str();
-					_devices.push_back(device);
+						std::stringstream ss; ss << "device '" << deviceName << "', vendor '" << deviceVendor << "', platform '" << platformName << "'";
+						deviceDesc device;
+						device.platform_id = platforms[p];
+						device.device_id = devices[d];
+						device.name = ss.str();
+						_devices.push_back(device);
+					}
 				}
 			}
 		}

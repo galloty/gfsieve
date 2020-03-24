@@ -1,7 +1,7 @@
 /*
 Copyright 2020, Yves Gallot
 
-gsieve is free source code, under the MIT license (see LICENSE). You can redistribute, use and/or modify it.
+gfsieve is free source code, under the MIT license (see LICENSE). You can redistribute, use and/or modify it.
 Please give feedback to the authors if improvement is realized. It is distributed in the hope that it will be useful.
 */
 
@@ -100,13 +100,13 @@ public:
 	{
 		const cl_ulong i = cl_ulong(index);
 		_setKernelArg(_check_primes, 2, sizeof(cl_ulong), &i);
-		_executeKernel(_check_primes, count);
+		_executeKernel(_check_primes, count, 64);
 	}
 
 public:
 	void initFactors(const size_t count)
 	{
-		_executeKernel(_init_factors, count);
+		_executeKernel(_init_factors, count, 64);
 	}
 
 public:
@@ -114,7 +114,7 @@ public:
 	{
 		for (size_t i = 0, N_2_1024 = size_t(1) << (n - 1 - 10); i < N_2_1024; ++i)
 		{
-			_executeKernel(_check_factors, count);
+			_executeKernel(_check_factors, count, 64);
 		}
 	}
 
