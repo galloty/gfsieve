@@ -12,7 +12,7 @@ Please give feedback to the authors if improvement is realized. It is distribute
 class engine : public ocl::device
 {
 private:
-	cl_mem _prime_vector = nullptr, _factor_vector = nullptr, c_vector = nullptr, a2k_vector = nullptr, a2k_inv_vector = nullptr;
+	cl_mem _prime_vector = nullptr, _factor_vector = nullptr, _c_vector = nullptr, _a2k_vector = nullptr, _a2k_inv_vector = nullptr;
 	cl_mem _prime_count = nullptr, _factor_count = nullptr;
 	cl_kernel _check_primes = nullptr, _init_factors = nullptr, _check_factors = nullptr, _clear_primes = nullptr;
 
@@ -28,9 +28,9 @@ public:
 #endif
 		_prime_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
 		_factor_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * factor_size);
-		c_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
-		a2k_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
-		a2k_inv_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
+		_c_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
+		_a2k_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
+		_a2k_inv_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
 		_prime_count = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_uint));
 		_factor_count = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_uint));
 	}
@@ -43,9 +43,9 @@ public:
 #endif
 		_releaseBuffer(_prime_vector);
 		_releaseBuffer(_factor_vector);
-		_releaseBuffer(c_vector);
-		_releaseBuffer(a2k_vector);
-		_releaseBuffer(a2k_inv_vector);
+		_releaseBuffer(_c_vector);
+		_releaseBuffer(_a2k_vector);
+		_releaseBuffer(_a2k_inv_vector);
 		_releaseBuffer(_prime_count);
 		_releaseBuffer(_factor_count);
 	}
@@ -63,16 +63,16 @@ public:
 		_init_factors = _createKernel("init_factors");
 		_setKernelArg(_init_factors, 0, sizeof(cl_mem), &_prime_count);
 		_setKernelArg(_init_factors, 1, sizeof(cl_mem), &_prime_vector);
-		_setKernelArg(_init_factors, 2, sizeof(cl_mem), &a2k_vector);
-		_setKernelArg(_init_factors, 3, sizeof(cl_mem), &a2k_inv_vector);
-		_setKernelArg(_init_factors, 4, sizeof(cl_mem), &c_vector);
+		_setKernelArg(_init_factors, 2, sizeof(cl_mem), &_a2k_vector);
+		_setKernelArg(_init_factors, 3, sizeof(cl_mem), &_a2k_inv_vector);
+		_setKernelArg(_init_factors, 4, sizeof(cl_mem), &_c_vector);
 
 		_check_factors = _createKernel("check_factors");
 		_setKernelArg(_check_factors, 0, sizeof(cl_mem), &_prime_count);
 		_setKernelArg(_check_factors, 1, sizeof(cl_mem), &_prime_vector);
-		_setKernelArg(_check_factors, 2, sizeof(cl_mem), &a2k_vector);
-		_setKernelArg(_check_factors, 3, sizeof(cl_mem), &a2k_inv_vector);
-		_setKernelArg(_check_factors, 4, sizeof(cl_mem), &c_vector);
+		_setKernelArg(_check_factors, 2, sizeof(cl_mem), &_a2k_vector);
+		_setKernelArg(_check_factors, 3, sizeof(cl_mem), &_a2k_inv_vector);
+		_setKernelArg(_check_factors, 4, sizeof(cl_mem), &_c_vector);
 		_setKernelArg(_check_factors, 5, sizeof(cl_mem), &_factor_count);
 		_setKernelArg(_check_factors, 6, sizeof(cl_mem), &_factor_vector);
 
@@ -100,13 +100,13 @@ public:
 	{
 		const cl_ulong i = cl_ulong(index);
 		_setKernelArg(_check_primes, 2, sizeof(cl_ulong), &i);
-		_executeKernel(_check_primes, count, 64);
+		_executeKernel(_check_primes, count);
 	}
 
 public:
 	void initFactors(const size_t count)
 	{
-		_executeKernel(_init_factors, count, 64);
+		_executeKernel(_init_factors, count);
 	}
 
 public:
@@ -114,7 +114,7 @@ public:
 	{
 		for (size_t i = 0, N_2_1024 = size_t(1) << (n - 1 - 10); i < N_2_1024; ++i)
 		{
-			_executeKernel(_check_factors, count, 64);
+			_executeKernel(_check_factors, count);
 		}
 	}
 

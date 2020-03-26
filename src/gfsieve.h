@@ -96,9 +96,9 @@ private:
 public:
 	bool check(const uint32_t n, const uint32_t p_min, const uint32_t p_max, engine & engine) const
 	{
-		const int log2_prime_size = 17;
+		const int log2_prime_size = 18;
 		const size_t prime_size = size_t(1) << log2_prime_size;
-		const size_t factor_size = size_t(1) << 20;
+		const size_t factor_size = size_t(1) << 24;
 
 		std::stringstream src;
 		src << "#define\tlog2_prime_size\t" << log2_prime_size << std::endl;

@@ -30,7 +30,7 @@ namespace ocl
 {
 
 // #define ocl_debug		1
-//#define ocl_fast_exec		1
+// #define ocl_fast_exec		1
 #define ocl_device_type		CL_DEVICE_TYPE_GPU	// CL_DEVICE_TYPE_ALL
 
 class oclObject

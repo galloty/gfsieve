@@ -31,6 +31,10 @@ static const char * const src_ocl_sieve = \
 "\n" \
 "#pragma OPENCL FP_CONTRACT OFF\n" \
 "\n" \
+"#ifdef __NV_CL_C_VERSION\n" \
+"	#define PTX_ASM	1\n" \
+"#endif\n" \
+"\n" \
 "typedef uint	uint32;\n" \
 "typedef ulong	uint64;\n" \
 "\n" \
@@ -150,60 +154,64 @@ static const char * const src_ocl_sieve = \
 "	uint64 s1;\n" \
 "} uint128;\n" \
 "\n" \
-"inline uint96 uint96_set_ui(const uint32 n) { uint96 r; r.s0 = n; r.s1 = 0; return r; }\n" \
+"inline uint96 uint96_set_ui(const uint64 n) { uint96 r; r.s0 = n; r.s1 = 0; return r; }\n" \
 "\n" \
 "inline uint96 uint96_set(const uint64 s0, const uint32 s1) { uint96 r; r.s0 = s0; r.s1 = s1; return r; }\n" \
 "\n" \
 "inline bool uint96_is_even(const uint96 x) { return (x.s0 % 2 == 0); }\n" \
 "\n" \
-"inline bool uint96_is_equal_ui(const uint96 x, const uint32 n) { const bool r = ((x.s0 == n) && (x.s1 == 0)); return r; }\n" \
+"inline bool uint96_is_equal_ui(const uint96 x, const uint64 n) { return ((x.s0 == n) && (x.s1 == 0)); }\n" \
 "\n" \
-"inline bool uint96_is_less_or_equal_ui(const uint96 x, const uint32 n) { const bool r = ((x.s0 <= n) && (x.s1 == 0)); return r; }\n" \
+"inline bool uint96_is_less_or_equal_ui(const uint96 x, const uint64 n) { return ((x.s0 <= n) && (x.s1 == 0)); }\n" \
 "\n" \
-"inline bool uint96_is_greater_or_equal(const uint96 x, const uint96 y)\n" \
-"{\n" \
-"	const bool r = (x.s1 > y.s1) || ((x.s1 == y.s1) && (x.s0 >= y.s0));\n" \
-"	return r;\n" \
-"}\n" \
+"inline bool uint96_is_greater_or_equal(const uint96 x, const uint96 y) { return (x.s1 > y.s1) || ((x.s1 == y.s1) && (x.s0 >= y.s0)); }\n" \
 "\n" \
-"inline int uint96_log2(const uint96 x)\n" \
-"{\n" \
-"	return (x.s1 == 0) ? (63 - clz(x.s0)) : (95 - clz(x.s1));\n" \
-"}\n" \
+"inline int uint96_log2(const uint96 x) { return (x.s1 == 0) ? (63 - clz(x.s0)) : (95 - clz(x.s1)); }\n" \
 "\n" \
-"inline uint96 uint96_or_ui(const uint96 x, const uint32 n)\n" \
+"inline uint96 uint96_or_ui(const uint96 x, const uint64 n)\n" \
 "{\n" \
 "	uint96 r; r.s0 = x.s0 | n; r.s1 = x.s1;\n" \
 "	return r;\n" \
 "}\n" \
 "\n" \
-"inline uint96 uint96_add_ui(const uint96 x, const uint32 n)\n" \
+"inline uint96 uint96_add_ui(const uint96 x, const uint64 n)\n" \
 "{\n" \
+"	uint96 r;\n" \
+"#ifdef PTX_ASM\n" \
+"	asm volatile (\"add.cc.u64 %0, %1, %2;\" : \"=l\" (r.s0) : \"l\" (x.s0) , \"l\" (n));\n" \
+"	asm volatile (\"addc.u32 %0, %1, 0;\" : \"=r\" (r.s1) : \"r\" (x.s1));\n" \
+"#else\n" \
 "	const uint64 s0 = x.s0 + n;\n" \
 "	const uint32 c = (s0 < n) ? 1 : 0;\n" \
-"	uint96 r; r.s0 = s0; r.s1 = x.s1 + c;\n" \
+"	r.s0 = s0; r.s1 = x.s1 + c;\n" \
+"#endif\n" \
 "	return r;\n" \
 "}\n" \
 "\n" \
 "inline uint96 uint96_add(const uint96 x, const uint96 y)\n" \
 "{\n" \
+"	uint96 r;\n" \
+"#ifdef PTX_ASM\n" \
+"	asm volatile (\"add.cc.u64 %0, %1, %2;\" : \"=l\" (r.s0) : \"l\" (x.s0) , \"l\" (y.s0));\n" \
+"	asm volatile (\"addc.u32 %0, %1, %2;\" : \"=r\" (r.s1) : \"r\" (x.s1) , \"r\" (y.s1));\n" \
+"#else\n" \
 "	const uint64 s0 = x.s0 + y.s0;\n" \
 "	const uint32 c = (s0 < y.s0) ? 1 : 0;\n" \
-"	uint96 r; r.s0 = s0; r.s1 = x.s1 + y.s1 + c;\n" \
-"	return r;\n" \
-"}\n" \
-"\n" \
-"inline uint96 uint96_sub_ui(const uint96 x, const uint32 n)\n" \
-"{\n" \
-"	const uint32 c = (x.s0 < n) ? 1 : 0;\n" \
-"	uint96 r; r.s0 = x.s0 - n; r.s1 = x.s1 - c;\n" \
+"	r.s0 = s0; r.s1 = x.s1 + y.s1 + c;\n" \
+"#endif\n" \
 "	return r;\n" \
 "}\n" \
 "\n" \
 "inline uint96 uint96_sub(const uint96 x, const uint96 y)\n" \
 "{\n" \
+"	uint96 r;\n" \
+"#ifdef PTX_ASM\n" \
+"	asm volatile (\"sub.cc.u64 %0, %1, %2;\" : \"=l\" (r.s0) : \"l\" (x.s0) , \"l\" (y.s0));\n" \
+"	asm volatile (\"subc.u32 %0, %1, %2;\" : \"=r\" (r.s1) : \"r\" (x.s1) , \"r\" (y.s1));\n" \
+"#else\n" \
 "	const uint32 c = (x.s0 < y.s0) ? 1 : 0;\n" \
-"	uint96 r; r.s0 = x.s0 - y.s0; r.s1 = x.s1 - y.s1 - c;\n" \
+"	r.s0 = x.s0 - y.s0; r.s1 = x.s1 - y.s1 - c;\n" \
+"#endif\n" \
 "	return r;\n" \
 "}\n" \
 "\n" \
@@ -223,56 +231,88 @@ static const char * const src_ocl_sieve = \
 "	return r;\n" \
 "}\n" \
 "\n" \
-"inline uint96 uint96_mul_ui(const uint96 x, const uint32 n)\n" \
+"inline uint96 uint96_mul_64_32(const uint64 n, const uint32 m)\n" \
 "{\n" \
-"	const uint64 a0 = (uint32)(x.s0) * (uint64)(n);\n" \
-"	const uint64 a1 = (x.s0 >> 32) * n + (a0 >> 32);\n" \
 "	uint96 r;\n" \
-"	r.s0 = (uint32)(a0) | (a1 << 32);\n" \
-"	r.s1 = x.s1 * n + (a1 >> 32);\n" \
+"#ifdef PTX_ASM\n" \
+"	const uint32 n_l = (uint32)(n), n_h = (uint32)(n >> 32);\n" \
+"	asm volatile (\"mul.wide.u32 %0, %1, %2;\" : \"=l\" (r.s0) : \"r\" (n_l) , \"r\" (m));\n" \
+"	uint32 c1 = (uint32)(r.s0 >> 32);\n" \
+"	asm volatile (\"mad.lo.cc.u32 %0, %1, %2, %3;\" : \"=r\" (c1) : \"r\" (n_h) , \"r\" (m), \"r\" (c1));\n" \
+"	asm volatile (\"madc.hi.u32 %0, %1, %2, 0;\" : \"=r\" (r.s1) : \"r\" (n_h) , \"r\" (m));\n" \
+"	r.s0 = upsample(c1, (uint32)(r.s0));\n" \
+"#else\n" \
+"	r.s0 = n * m; r.s1 = (uint32)(mul_hi(n, (uint64)(m)));\n" \
+"#endif\n" \
 "	return r;\n" \
 "}\n" \
 "\n" \
 "inline uint96 uint96_mul(const uint96 x, const uint96 y)\n" \
 "{\n" \
-"	const uint64 a00l = x.s0 * y.s0, a00h = mul_hi(x.s0, y.s0);\n" \
-"	const uint32 a01 = (uint32)(x.s0) * y.s1, a10 = x.s1 * (uint32)(y.s0);\n" \
-"	const uint32 sa1 = (uint32)(a00h) + a01 + a10;\n" \
-"	uint96 r; r.s0 = a00l; r.s1 = sa1;\n" \
+"	const uint32 a0 = (uint32)(x.s0), a1 = (uint32)(x.s0 >> 32), a2 = x.s1;\n" \
+"	const uint32 b0 = (uint32)(y.s0), b1 = (uint32)(y.s0 >> 32), b2 = y.s1;\n" \
+"	uint32 c0 = a0 * b0, c1 = mul_hi(a0, b0), c2 = a1 * b1 + a0 * b2 + a2 * b0;\n" \
+"	uint96 r;\n" \
+"#ifdef PTX_ASM\n" \
+"	asm volatile (\"mad.lo.cc.u32 %0, %1, %2, %3;\" : \"=r\" (c1) : \"r\" (a0) , \"r\" (b1), \"r\" (c1));\n" \
+"	asm volatile (\"madc.hi.u32 %0, %1, %2, %3;\" : \"=r\" (c2) : \"r\" (a0) , \"r\" (b1), \"r\" (c2));\n" \
+"	asm volatile (\"mad.lo.cc.u32 %0, %1, %2, %3;\" : \"=r\" (c1) : \"r\" (a1) , \"r\" (b0), \"r\" (c1));\n" \
+"	asm volatile (\"madc.hi.u32 %0, %1, %2, %3;\" : \"=r\" (c2) : \"r\" (a1) , \"r\" (b0), \"r\" (c2));\n" \
+"	r.s0 = upsample(c1, c0); r.s1 = c2;\n" \
+"#else\n" \
+"	const uint64 c12 = c1 + a0 * (uint64)(b1) + a1 * (uint64)(b0);\n" \
+"	r.s0 = (c12 << 32) | c0; r.s1 = c2 + (uint32)(c12 >> 32);\n" \
+"#endif\n" \
 "	return r;\n" \
 "}\n" \
 "\n" \
+"inline uint128 uint128_set(const uint96 x) { uint128 r; r.s0 = x.s0; r.s1 = x.s1; return r; }\n" \
+"\n" \
 "inline uint128 uint128_add_ui(const uint128 x, const uint64 n)\n" \
 "{\n" \
+"	uint128 r;\n" \
+"#ifdef PTX_ASM\n" \
+"	asm volatile (\"add.cc.u64 %0, %1, %2;\" : \"=l\" (r.s0) : \"l\" (x.s0) , \"l\" (n));\n" \
+"	asm volatile (\"addc.u64 %0, %1, 0;\" : \"=l\" (r.s1) : \"l\" (x.s1));\n" \
+"#else\n" \
 "	const uint64 s0 = x.s0 + n;\n" \
 "	const uint32 c = (s0 < n) ? 1 : 0;\n" \
-"	uint128 r; r.s0 = s0; r.s1 = x.s1 + c;\n" \
+"	r.s0 = s0; r.s1 = x.s1 + c;\n" \
+"#endif\n" \
 "	return r;\n" \
 "}\n" \
 "\n" \
 "inline uint128 uint128_add(const uint128 x, const uint128 y)\n" \
 "{\n" \
+"	uint128 r;\n" \
+"#ifdef PTX_ASM\n" \
+"	asm volatile (\"add.cc.u64 %0, %1, %2;\" : \"=l\" (r.s0) : \"l\" (x.s0), \"l\" (y.s0));\n" \
+"	asm volatile (\"addc.u64 %0, %1, %2;\" : \"=l\" (r.s1) : \"l\" (x.s1), \"l\" (y.s1));\n" \
+"#else\n" \
 "	const uint64 s0 = x.s0 + y.s0;\n" \
 "	const uint32 c = (s0 < y.s0) ? 1 : 0;\n" \
-"	uint128 r; r.s0 = s0; r.s1 = x.s1 + y.s1 + c;\n" \
+"	r.s0 = s0; r.s1 = x.s1 + y.s1 + c;\n" \
+"#endif\n" \
 "	return r;\n" \
 "}\n" \
 "\n" \
-"inline uint128 uint128_mul_ui(const uint64 n, const uint64 m)\n" \
+"inline uint128 uint128_mul_64_64(const uint64 n, const uint64 m)\n" \
 "{\n" \
 "	uint128 r; r.s0 = n * m; r.s1 = mul_hi(n, m);\n" \
 "	return r;\n" \
 "}\n" \
 "\n" \
+"// x < 2^95, y < 2^96\n" \
 "inline uint96 uint96_mul_hi(const uint96 x, const uint96 y)\n" \
 "{\n" \
-"	const uint128 a01 = uint128_mul_ui(x.s0, y.s1), a10 = uint128_mul_ui(x.s1, y.s0);\n" \
-"	const uint64 a00h = mul_hi(x.s0, y.s0), a11 = x.s1 * (uint64)(y.s1);\n" \
+"	const uint96 s10 = uint96_mul_64_32(y.s0, x.s1);	// s10 < 2^95\n" \
+"	const uint96 s01 = uint96_mul_64_32(x.s0, y.s1);	// s01 < 2^96\n" \
+"	const uint96 s = uint96_add_ui(s10, mul_hi(x.s0, y.s0));	// s < 2^96\n" \
 "\n" \
-"	uint128 sa1 = uint128_add_ui(uint128_add(a01, a10), a00h);\n" \
-"	sa1.s1 += a11;\n" \
+"	uint128 s12 = uint128_add(uint128_set(s01), uint128_set(s));\n" \
+"	s12.s1 += x.s1 * (uint64)(y.s1);\n" \
 "\n" \
-"	uint96 r; r.s0 = (sa1.s0 >> 32) | (sa1.s1 << 32); r.s1 = (uint32)(sa1.s1 >> 32);\n" \
+"	uint96 r; r.s0 = (s12.s0 >> 32) | (s12.s1 << 32); r.s1 = (uint32)(s12.s1 >> 32);\n" \
 "	return r;\n" \
 "}\n" \
 "\n" \
@@ -290,11 +330,14 @@ static const char * const src_ocl_sieve = \
 "	return r;\n" \
 "}\n" \
 "\n" \
+"inline uint96 uint96_reduce(const uint96 x, const uint96 p)\n" \
+"{\n" \
+"	return uint96_is_greater_or_equal(x, p) ? uint96_sub(x, p) : x;\n" \
+"}\n" \
+"\n" \
 "inline uint96 uint96_dup_mod(const uint96 x, const uint96 p)\n" \
 "{\n" \
-"	uint96 r = uint96_mul_2exp(x, 1);\n" \
-"	if (uint96_is_greater_or_equal(r, p)) r = uint96_sub(r, p);\n" \
-"	return r;\n" \
+"	return uint96_reduce(uint96_add(x, x), p);\n" \
 "}\n" \
 "\n" \
 "inline double2 uint96_to_dd(const uint96 x)\n" \
@@ -333,17 +376,14 @@ static const char * const src_ocl_sieve = \
 "\n" \
 "// Barrett's product: let n = 95, r = ceil(log2(p)), p_shift = r - 2 = ceil(log2(p)) - 1, t = n + 1 = 96,\n" \
 "// p_inv = floor(2^(s + t) / p). Then the number of iterations h = 1.\n" \
-"// We must have x^2 < alpha.p with alpha < 2^(n-2).enf then p < 2^(n-2) = 2^93.\n" \
+"// We must have x^2 < alpha.p with alpha = 2^(n-2). If p <= 2^(n-2) = 2^93 then x^2 < p^2 <= alpha.p.\n" \
 "inline uint96 uint96_square_mod(const uint96 x, const uint96 p, const uint96 p_inv, const int p_shift)\n" \
 "{\n" \
-"	const uint128 a00 = uint128_mul_ui(x.s0, x.s0);\n" \
-"	const uint128 a01 = uint128_mul_ui(x.s0, x.s1 + (uint64)(x.s1));\n" \
-"	const uint64 a11 = x.s1 * (uint64)(x.s1);\n" \
+"	const uint128 a00 = uint128_mul_64_64(x.s0, x.s0);\n" \
+"	uint128 a12 = uint128_add_ui(uint128_mul_64_64(x.s0, x.s1 + (uint64)(x.s1)), a00.s1);\n" \
+"	a12.s1 += x.s1 * (uint64)(x.s1);\n" \
 "\n" \
-"	uint128 sa1 = uint128_add_ui(a01, a00.s1);\n" \
-"	sa1.s1 += a11;\n" \
-"\n" \
-"	const uint64 a0 = a00.s0, a1 = sa1.s0, a2 = sa1.s1;\n" \
+"	const uint64 a0 = a00.s0, a1 = a12.s0, a2 = a12.s1;\n" \
 "\n" \
 "	uint96 q_p;\n" \
 "	if (p_shift < 64)\n" \
@@ -360,19 +400,14 @@ static const char * const src_ocl_sieve = \
 "\n" \
 "	q_p = uint96_mul(uint96_mul_hi(q_p, p_inv), p);\n" \
 "\n" \
-"	uint96 r = uint96_set(a0, (uint32)(a1));\n" \
-"	r = uint96_sub(r, q_p);\n" \
-"	if (uint96_is_greater_or_equal(r, p)) r = uint96_sub(r, p);\n" \
-"	return r;\n" \
+"	return uint96_reduce(uint96_sub(uint96_set(a0, (uint32)(a1)), q_p), p);\n" \
 "}\n" \
 "\n" \
 "// Shoup’s modular multiplication: p < 2^95 and w_inv = floor(w.2^96/p).\n" \
 "inline uint96 uint96_mul_mod(const uint96 x, const uint96 w, const uint96 p, const uint96 w_inv)\n" \
 "{\n" \
 "	const uint96 q = uint96_mul_hi(x, w_inv);\n" \
-"	uint96 r = uint96_sub(uint96_mul(x, w), uint96_mul(q, p));\n" \
-"	if (uint96_is_greater_or_equal(r, p)) r = uint96_sub(r, p);\n" \
-"	return r;\n" \
+"	return uint96_reduce(uint96_sub(uint96_mul(x, w), uint96_mul(q, p)), p);\n" \
 "}\n" \
 "\n" \
 "inline uint96 uint96_two_powm(const uint96 e, const uint96 p, const uint96 p_inv, const int p_shift)\n" \

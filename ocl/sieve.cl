@@ -23,6 +23,10 @@ Please give feedback to the authors if improvement is realized. It is distribute
 
 #pragma OPENCL FP_CONTRACT OFF
 
+#ifdef __NV_CL_C_VERSION
+	#define PTX_ASM	1
+#endif
+
 typedef uint	uint32;
 typedef ulong	uint64;
 
@@ -142,60 +146,64 @@ typedef struct _uint128
 	uint64 s1;
 } uint128;
 
-inline uint96 uint96_set_ui(const uint32 n) { uint96 r; r.s0 = n; r.s1 = 0; return r; }
+inline uint96 uint96_set_ui(const uint64 n) { uint96 r; r.s0 = n; r.s1 = 0; return r; }
 
 inline uint96 uint96_set(const uint64 s0, const uint32 s1) { uint96 r; r.s0 = s0; r.s1 = s1; return r; }
 
 inline bool uint96_is_even(const uint96 x) { return (x.s0 % 2 == 0); }
 
-inline bool uint96_is_equal_ui(const uint96 x, const uint32 n) { const bool r = ((x.s0 == n) && (x.s1 == 0)); return r; }
+inline bool uint96_is_equal_ui(const uint96 x, const uint64 n) { return ((x.s0 == n) && (x.s1 == 0)); }
 
-inline bool uint96_is_less_or_equal_ui(const uint96 x, const uint32 n) { const bool r = ((x.s0 <= n) && (x.s1 == 0)); return r; }
+inline bool uint96_is_less_or_equal_ui(const uint96 x, const uint64 n) { return ((x.s0 <= n) && (x.s1 == 0)); }
 
-inline bool uint96_is_greater_or_equal(const uint96 x, const uint96 y)
-{
-	const bool r = (x.s1 > y.s1) || ((x.s1 == y.s1) && (x.s0 >= y.s0));
-	return r;
-}
+inline bool uint96_is_greater_or_equal(const uint96 x, const uint96 y) { return (x.s1 > y.s1) || ((x.s1 == y.s1) && (x.s0 >= y.s0)); }
 
-inline int uint96_log2(const uint96 x)
-{
-	return (x.s1 == 0) ? (63 - clz(x.s0)) : (95 - clz(x.s1));
-}
+inline int uint96_log2(const uint96 x) { return (x.s1 == 0) ? (63 - clz(x.s0)) : (95 - clz(x.s1)); }
 
-inline uint96 uint96_or_ui(const uint96 x, const uint32 n)
+inline uint96 uint96_or_ui(const uint96 x, const uint64 n)
 {
 	uint96 r; r.s0 = x.s0 | n; r.s1 = x.s1;
 	return r;
 }
 
-inline uint96 uint96_add_ui(const uint96 x, const uint32 n)
+inline uint96 uint96_add_ui(const uint96 x, const uint64 n)
 {
+	uint96 r;
+#ifdef PTX_ASM
+	asm volatile ("add.cc.u64 %0, %1, %2;" : "=l" (r.s0) : "l" (x.s0) , "l" (n));
+	asm volatile ("addc.u32 %0, %1, 0;" : "=r" (r.s1) : "r" (x.s1));
+#else
 	const uint64 s0 = x.s0 + n;
 	const uint32 c = (s0 < n) ? 1 : 0;
-	uint96 r; r.s0 = s0; r.s1 = x.s1 + c;
+	r.s0 = s0; r.s1 = x.s1 + c;
+#endif
 	return r;
 }
 
 inline uint96 uint96_add(const uint96 x, const uint96 y)
 {
+	uint96 r;
+#ifdef PTX_ASM
+	asm volatile ("add.cc.u64 %0, %1, %2;" : "=l" (r.s0) : "l" (x.s0) , "l" (y.s0));
+	asm volatile ("addc.u32 %0, %1, %2;" : "=r" (r.s1) : "r" (x.s1) , "r" (y.s1));
+#else
 	const uint64 s0 = x.s0 + y.s0;
 	const uint32 c = (s0 < y.s0) ? 1 : 0;
-	uint96 r; r.s0 = s0; r.s1 = x.s1 + y.s1 + c;
-	return r;
-}
-
-inline uint96 uint96_sub_ui(const uint96 x, const uint32 n)
-{
-	const uint32 c = (x.s0 < n) ? 1 : 0;
-	uint96 r; r.s0 = x.s0 - n; r.s1 = x.s1 - c;
+	r.s0 = s0; r.s1 = x.s1 + y.s1 + c;
+#endif
 	return r;
 }
 
 inline uint96 uint96_sub(const uint96 x, const uint96 y)
 {
+	uint96 r;
+#ifdef PTX_ASM
+	asm volatile ("sub.cc.u64 %0, %1, %2;" : "=l" (r.s0) : "l" (x.s0) , "l" (y.s0));
+	asm volatile ("subc.u32 %0, %1, %2;" : "=r" (r.s1) : "r" (x.s1) , "r" (y.s1));
+#else
 	const uint32 c = (x.s0 < y.s0) ? 1 : 0;
-	uint96 r; r.s0 = x.s0 - y.s0; r.s1 = x.s1 - y.s1 - c;
+	r.s0 = x.s0 - y.s0; r.s1 = x.s1 - y.s1 - c;
+#endif
 	return r;
 }
 
@@ -215,56 +223,88 @@ inline uint96 uint96_div_2exp(const uint96 x, const int s)
 	return r;
 }
 
-inline uint96 uint96_mul_ui(const uint96 x, const uint32 n)
+inline uint96 uint96_mul_64_32(const uint64 n, const uint32 m)
 {
-	const uint64 a0 = (uint32)(x.s0) * (uint64)(n);
-	const uint64 a1 = (x.s0 >> 32) * n + (a0 >> 32);
 	uint96 r;
-	r.s0 = (uint32)(a0) | (a1 << 32);
-	r.s1 = x.s1 * n + (a1 >> 32);
+#ifdef PTX_ASM
+	const uint32 n_l = (uint32)(n), n_h = (uint32)(n >> 32);
+	asm volatile ("mul.wide.u32 %0, %1, %2;" : "=l" (r.s0) : "r" (n_l) , "r" (m));
+	uint32 c1 = (uint32)(r.s0 >> 32);
+	asm volatile ("mad.lo.cc.u32 %0, %1, %2, %3;" : "=r" (c1) : "r" (n_h) , "r" (m), "r" (c1));
+	asm volatile ("madc.hi.u32 %0, %1, %2, 0;" : "=r" (r.s1) : "r" (n_h) , "r" (m));
+	r.s0 = upsample(c1, (uint32)(r.s0));
+#else
+	r.s0 = n * m; r.s1 = (uint32)(mul_hi(n, (uint64)(m)));
+#endif
 	return r;
 }
 
 inline uint96 uint96_mul(const uint96 x, const uint96 y)
 {
-	const uint64 a00l = x.s0 * y.s0, a00h = mul_hi(x.s0, y.s0);
-	const uint32 a01 = (uint32)(x.s0) * y.s1, a10 = x.s1 * (uint32)(y.s0);
-	const uint32 sa1 = (uint32)(a00h) + a01 + a10;
-	uint96 r; r.s0 = a00l; r.s1 = sa1;
+	const uint32 a0 = (uint32)(x.s0), a1 = (uint32)(x.s0 >> 32), a2 = x.s1;
+	const uint32 b0 = (uint32)(y.s0), b1 = (uint32)(y.s0 >> 32), b2 = y.s1;
+	uint32 c0 = a0 * b0, c1 = mul_hi(a0, b0), c2 = a1 * b1 + a0 * b2 + a2 * b0;
+	uint96 r;
+#ifdef PTX_ASM
+	asm volatile ("mad.lo.cc.u32 %0, %1, %2, %3;" : "=r" (c1) : "r" (a0) , "r" (b1), "r" (c1));
+	asm volatile ("madc.hi.u32 %0, %1, %2, %3;" : "=r" (c2) : "r" (a0) , "r" (b1), "r" (c2));
+	asm volatile ("mad.lo.cc.u32 %0, %1, %2, %3;" : "=r" (c1) : "r" (a1) , "r" (b0), "r" (c1));
+	asm volatile ("madc.hi.u32 %0, %1, %2, %3;" : "=r" (c2) : "r" (a1) , "r" (b0), "r" (c2));
+	r.s0 = upsample(c1, c0); r.s1 = c2;
+#else
+	const uint64 c12 = c1 + a0 * (uint64)(b1) + a1 * (uint64)(b0);
+	r.s0 = (c12 << 32) | c0; r.s1 = c2 + (uint32)(c12 >> 32);
+#endif
 	return r;
 }
 
+inline uint128 uint128_set(const uint96 x) { uint128 r; r.s0 = x.s0; r.s1 = x.s1; return r; }
+
 inline uint128 uint128_add_ui(const uint128 x, const uint64 n)
 {
+	uint128 r;
+#ifdef PTX_ASM
+	asm volatile ("add.cc.u64 %0, %1, %2;" : "=l" (r.s0) : "l" (x.s0) , "l" (n));
+	asm volatile ("addc.u64 %0, %1, 0;" : "=l" (r.s1) : "l" (x.s1));
+#else
 	const uint64 s0 = x.s0 + n;
 	const uint32 c = (s0 < n) ? 1 : 0;
-	uint128 r; r.s0 = s0; r.s1 = x.s1 + c;
+	r.s0 = s0; r.s1 = x.s1 + c;
+#endif
 	return r;
 }
 
 inline uint128 uint128_add(const uint128 x, const uint128 y)
 {
+	uint128 r;
+#ifdef PTX_ASM
+	asm volatile ("add.cc.u64 %0, %1, %2;" : "=l" (r.s0) : "l" (x.s0), "l" (y.s0));
+	asm volatile ("addc.u64 %0, %1, %2;" : "=l" (r.s1) : "l" (x.s1), "l" (y.s1));
+#else
 	const uint64 s0 = x.s0 + y.s0;
 	const uint32 c = (s0 < y.s0) ? 1 : 0;
-	uint128 r; r.s0 = s0; r.s1 = x.s1 + y.s1 + c;
+	r.s0 = s0; r.s1 = x.s1 + y.s1 + c;
+#endif
 	return r;
 }
 
-inline uint128 uint128_mul_ui(const uint64 n, const uint64 m)
+inline uint128 uint128_mul_64_64(const uint64 n, const uint64 m)
 {
 	uint128 r; r.s0 = n * m; r.s1 = mul_hi(n, m);
 	return r;
 }
 
+// x < 2^95, y < 2^96
 inline uint96 uint96_mul_hi(const uint96 x, const uint96 y)
 {
-	const uint128 a01 = uint128_mul_ui(x.s0, y.s1), a10 = uint128_mul_ui(x.s1, y.s0);
-	const uint64 a00h = mul_hi(x.s0, y.s0), a11 = x.s1 * (uint64)(y.s1);
+	const uint96 s10 = uint96_mul_64_32(y.s0, x.s1);	// s10 < 2^95
+	const uint96 s01 = uint96_mul_64_32(x.s0, y.s1);	// s01 < 2^96
+	const uint96 s = uint96_add_ui(s10, mul_hi(x.s0, y.s0));	// s < 2^96
 
-	uint128 sa1 = uint128_add_ui(uint128_add(a01, a10), a00h);
-	sa1.s1 += a11;
+	uint128 s12 = uint128_add(uint128_set(s01), uint128_set(s));
+	s12.s1 += x.s1 * (uint64)(y.s1);
 
-	uint96 r; r.s0 = (sa1.s0 >> 32) | (sa1.s1 << 32); r.s1 = (uint32)(sa1.s1 >> 32);
+	uint96 r; r.s0 = (s12.s0 >> 32) | (s12.s1 << 32); r.s1 = (uint32)(s12.s1 >> 32);
 	return r;
 }
 
@@ -282,11 +322,14 @@ inline uint32 uint96_mod_ui(const uint96 x, const uint32 n)	// n < 2^8
 	return r;
 }
 
+inline uint96 uint96_reduce(const uint96 x, const uint96 p)
+{
+	return uint96_is_greater_or_equal(x, p) ? uint96_sub(x, p) : x;
+}
+
 inline uint96 uint96_dup_mod(const uint96 x, const uint96 p)
 {
-	uint96 r = uint96_mul_2exp(x, 1);
-	if (uint96_is_greater_or_equal(r, p)) r = uint96_sub(r, p);
-	return r;
+	return uint96_reduce(uint96_add(x, x), p);
 }
 
 inline double2 uint96_to_dd(const uint96 x)
@@ -325,17 +368,14 @@ inline uint96 uint96_shoup_inv(const uint96 x, const uint96 p)
 
 // Barrett's product: let n = 95, r = ceil(log2(p)), p_shift = r - 2 = ceil(log2(p)) - 1, t = n + 1 = 96,
 // p_inv = floor(2^(s + t) / p). Then the number of iterations h = 1.
-// We must have x^2 < alpha.p with alpha < 2^(n-2).enf then p < 2^(n-2) = 2^93.
+// We must have x^2 < alpha.p with alpha = 2^(n-2). If p <= 2^(n-2) = 2^93 then x^2 < p^2 <= alpha.p.
 inline uint96 uint96_square_mod(const uint96 x, const uint96 p, const uint96 p_inv, const int p_shift)
 {
-	const uint128 a00 = uint128_mul_ui(x.s0, x.s0);
-	const uint128 a01 = uint128_mul_ui(x.s0, x.s1 + (uint64)(x.s1));
-	const uint64 a11 = x.s1 * (uint64)(x.s1);
+	const uint128 a00 = uint128_mul_64_64(x.s0, x.s0);
+	uint128 a12 = uint128_add_ui(uint128_mul_64_64(x.s0, x.s1 + (uint64)(x.s1)), a00.s1);
+	a12.s1 += x.s1 * (uint64)(x.s1);
 
-	uint128 sa1 = uint128_add_ui(a01, a00.s1);
-	sa1.s1 += a11;
-
-	const uint64 a0 = a00.s0, a1 = sa1.s0, a2 = sa1.s1;
+	const uint64 a0 = a00.s0, a1 = a12.s0, a2 = a12.s1;
 
 	uint96 q_p;
 	if (p_shift < 64)
@@ -352,19 +392,14 @@ inline uint96 uint96_square_mod(const uint96 x, const uint96 p, const uint96 p_i
 
 	q_p = uint96_mul(uint96_mul_hi(q_p, p_inv), p);
 
-	uint96 r = uint96_set(a0, (uint32)(a1));
-	r = uint96_sub(r, q_p);
-	if (uint96_is_greater_or_equal(r, p)) r = uint96_sub(r, p);
-	return r;
+	return uint96_reduce(uint96_sub(uint96_set(a0, (uint32)(a1)), q_p), p);
 }
 
 // Shoup’s modular multiplication: p < 2^95 and w_inv = floor(w.2^96/p).
 inline uint96 uint96_mul_mod(const uint96 x, const uint96 w, const uint96 p, const uint96 w_inv)
 {
 	const uint96 q = uint96_mul_hi(x, w_inv);
-	uint96 r = uint96_sub(uint96_mul(x, w), uint96_mul(q, p));
-	if (uint96_is_greater_or_equal(r, p)) r = uint96_sub(r, p);
-	return r;
+	return uint96_reduce(uint96_sub(uint96_mul(x, w), uint96_mul(q, p)), p);
 }
 
 inline uint96 uint96_two_powm(const uint96 e, const uint96 p, const uint96 p_inv, const int p_shift)

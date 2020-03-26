@@ -15,4 +15,4 @@ An OpenCL SDK is not required. OpenCL header files are included in the project a
 
 ## TODO
 
-- asm (PTX) on Nvidia for carry propagation
+- add auto-tuning of parameters (prime size & local worksize)
