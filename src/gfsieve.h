@@ -37,6 +37,8 @@ public:
 
 protected:
 	volatile bool _quit = false;
+	const size_t _factor_size = size_t(1) << 24;
+	size_t _saved_count = 0;
 
 private:
 	static bool readOpenCL(const char * const clFileName, const char * const headerFileName, const char * const varName, std::stringstream & src)
@@ -93,12 +95,48 @@ private:
 		str[32 - n] = '\0';
 	}
 
+private:
+	void saveFactors(engine & engine, const uint32_t n, const timer::time & startTime, const double percentDone)
+	{
+		const size_t factor_count = engine.readFactorCount();
+		if (_saved_count == factor_count) return;
+		const double elapsedTime = timer::diffTime(timer::currentTime(), startTime);
+
+		if (factor_count >= _factor_size) throw std::runtime_error("Internal error detected");
+
+		const uint32_t N = uint32_t(1) << n;
+
+		std::vector<cl_ulong2> factor(factor_count);
+		engine.readFactors(factor.data(), factor_count);
+
+		std::ofstream resFile("res.txt", std::ios::app);
+		if (resFile.is_open())
+		{
+			for (size_t i = _saved_count; i < factor_count; ++i)
+			{
+				const cl_ulong2 & f = factor[i];
+				const uint32_t b = uint32_t(f.s[1] >> 32);
+				char str[32]; uint96_get_str(f.s[0], uint32_t(f.s[1]), str);
+				std::ostringstream ss; ss << str << " | " << b << "^" << N << "+1" << std::endl;
+				resFile << ss.str();
+				std::cout << ss.str();
+			}
+			resFile.close();
+			_saved_count = factor_count;
+		}
+
+		std::ostringstream ss; ss << std::setprecision(3) << 86400 / (elapsedTime * percentDone) << " P/day";
+		const std::string runtime = timer::formatTime(elapsedTime);
+		std::cout << factor_count << " factors, time = " << runtime << ", " << ss.str() << std::endl;
+	}
+
 public:
-	bool check(const uint32_t n, const uint32_t p_min, const uint32_t p_max, engine & engine) const
+	bool check(engine & engine, const uint32_t n, const uint32_t p_min, const uint32_t p_max)
 	{
 		const int log2_prime_size = 18;
 		const size_t prime_size = size_t(1) << log2_prime_size;
-		const size_t factor_size = size_t(1) << 24;
+
+		_saved_count = 0;
 
 		std::stringstream src;
 		src << "#define\tlog2_prime_size\t" << log2_prime_size << std::endl;
@@ -108,7 +146,7 @@ public:
 		if (!readOpenCL("ocl/sieve.cl", "src/ocl/sieve.h", "src_ocl_sieve", src)) src << src_ocl_sieve;
 
 		engine.loadProgram(src.str());
-		engine.allocMemory(prime_size, factor_size);
+		engine.allocMemory(prime_size, _factor_size);
 		engine.createKernels();
 
 		engine.clearCounters();
@@ -119,7 +157,7 @@ public:
 		const uint64_t i_min = uint64_t(floor(p_min * f)), i_max = uint64_t(ceil(p_max * f));
 
 		const timer::time startTime = timer::currentTime();
-		timer::time displayTime = startTime;
+		timer::time displayTime = startTime, recordTime = startTime;
 
 		uint64_t cnt = 0;
 		for (uint64_t i = i_min; i < i_max; ++i)
@@ -133,47 +171,33 @@ public:
 			// std::cout << factor_count << " factors" << std::endl;
 			engine.clearPrimes();
 			++cnt;
+
 			if (_quit) break;
-			if (timer::diffTime(timer::currentTime(), displayTime) > 1)
+
+			const timer::time currentTime = timer::currentTime();
+
+			if (timer::diffTime(currentTime, displayTime) > 1)
 			{
-				displayTime = timer::currentTime();
+				displayTime = currentTime;
 				std::ostringstream ss; ss << std::setprecision(3) << " " << cnt * 100.0 / (i_max - i_min) << "% done    \r";
 				std::cout << ss.str();
+			}
+
+			if (timer::diffTime(currentTime, recordTime) > 300)
+			{
+				recordTime = currentTime;
+				saveFactors(engine, n, startTime, double(i_max - i_min) / cnt);
 			}
 		}
 
 		std::cout << " Terminating...         \r";
-		const size_t factor_count = engine.readFactorCount();
-		const double elapsed_time = timer::diffTime(timer::currentTime(), startTime);
-		const std::string runtime = timer::formatTime(elapsed_time);
-		std::ostringstream ss; ss << std::setprecision(3) << 86400 / (elapsed_time * (i_max - i_min) / cnt) << " P/day";
-
-		std::cout << factor_count << " factors, time = " << runtime << ", " << ss.str() << std::endl;
-
-		if (factor_count >= factor_size) throw std::runtime_error("Internal error detected");
-
-		const uint32_t N = uint32_t(1) << n;
-
-		std::vector<cl_ulong2> factor(factor_count);
-		engine.readFactors(factor.data(), factor_count);
+		saveFactors(engine, n, startTime, double(i_max - i_min) / cnt);
 
 		// engine.displayProfiles(cnt);
 
 		engine.releaseKernels();
 		engine.releaseMemory();
 		engine.clearProgram();
-
-		std::ofstream resFile("res.txt", std::ios::app);
-		if (resFile.is_open())
-		{
-			for (const cl_ulong2 f : factor)
-			{
-				const uint32_t b = uint32_t(f.s[1] >> 32);
-				char str[32]; uint96_get_str(f.s[0], uint32_t(f.s[1]), str);
-				resFile << str << " | " << b << "^" << N << "+1" << std::endl;
-			}
-			resFile.close();
-		}
 
 		return true;
 	}

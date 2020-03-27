@@ -128,7 +128,7 @@ public:
 		ocl::platform platform;
 		platform.displayDevices();
 
-		if (args.size() < 3) return;
+		// if (args.size() < 3) return;
 
 		// parse args
 		const uint32_t n = (args.size() > 0) ? std::atoi(args[0].c_str()) : 21;
@@ -154,7 +154,7 @@ public:
 		gfsieve & sieve = gfsieve::getInstance();
 
 		engine engine(platform, d);
-		sieve.check(n, p_min, p_max, engine);
+		sieve.check(engine, n, p_min, p_max);
 	}
 };
 
