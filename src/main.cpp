@@ -87,7 +87,7 @@ private:
 #endif
 
 		std::ostringstream ss;
-		ss << "gfsieve 0.2.0 " << sysver << ssc.str() << std::endl;
+		ss << "gfsieve 0.3.0 " << sysver << ssc.str() << std::endl;
 		ss << "Copyright (c) 2020, Yves Gallot" << std::endl;
 		ss << "gfsieve is free source code, under the MIT license." << std::endl;
 		if (nl) ss << std::endl;
@@ -128,7 +128,7 @@ public:
 		ocl::platform platform;
 		platform.displayDevices();
 
-		// if (args.size() < 3) return;
+		if (args.size() < 3) return;
 
 		// parse args
 		const uint32_t n = (args.size() > 0) ? std::atoi(args[0].c_str()) : 21;

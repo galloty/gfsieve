@@ -445,16 +445,17 @@ inline uint96 uint96_powm(const uint96 a, const uint96 e, const uint96 p, const 
 __kernel
 void check_primes(__global uint * restrict const prime_count, __global ulong2 * restrict const prime_vector, const ulong i)
 {
-	const uint96 k = uint96_set((i << log2_prime_size) | get_global_id(0), (uint32)(i >> (64 - log2_prime_size)));
+	const uint96 k = uint96_set((i << log2GlobalWorkSize) | get_global_id(0), (uint32)(i >> (64 - log2GlobalWorkSize)));
 
-	const uint96 pm1 = uint96_mul_2exp(k, gfn_n + 1);
-	const uint96 p = uint96_or_ui(pm1, 1);
+	const uint96 p = uint96_or_ui(uint96_mul_2exp(k, gfn_n + 1), 1);
 	const int p_shift = uint96_log2(p) - 1;
 	const uint96 p_inv = uint96_barrett_inv(p, p_shift);
 
 	// 2-prp
-	const uint96 r1 = uint96_two_powm(pm1, p, p_inv, p_shift);
-	if (uint96_is_equal_ui(r1, 1))
+	uint96 r = uint96_two_powm(k, p, p_inv, p_shift);
+	for (size_t i = 0; i < gfn_n + 1; ++i) r = uint96_square_mod(r, p, p_inv, p_shift);
+
+	if (uint96_is_equal_ui(r, 1))
 	{
 		const uint prime_index = atomic_inc(prime_count);
 		prime_vector[prime_index] = (ulong2)(p.s0, (ulong)(p.s1));
@@ -476,13 +477,27 @@ void init_factors(__global const uint * restrict const prime_count, __global con
 	const int p_shift = uint96_log2(p) - 1;
 	const uint96 p_inv = uint96_barrett_inv(p, p_shift);
 
-	uint32 a = 3;
-	for (; a < 256; a += 2)
+	uint32 a;
+	if (uint96_mod_ui(p, 3) == 2) { a = 3; }
+	else
 	{
-		const uint32 p_moda = uint96_mod_ui(p, a);
-		if (jacobi(p_moda, a) == -1) break;
+		const uint32 pmod5 = uint96_mod_ui(p, 5);
+		if ((pmod5 == 2) || (pmod5 == 3)) { a = 5; }
+		else
+		{
+			const uint32 pmod7 = uint96_mod_ui(p, 7);
+			if ((pmod7 == 3) || (pmod7 == 5) || (pmod7 == 6)) { a = 7; }
+			else
+			{
+				for (a = 11; a < 256; a += 2)
+				{
+					const uint32 pmoda = uint96_mod_ui(p, a);
+					if (jacobi(pmoda, a) == -1) break;
+				}
+				if (a >= 256) return;	// error?
+			}
+		}
 	}
-	if (a >= 256) return;	// error?
 
 	const uint96 a_inv = uint96_shoup_inv(uint96_set_ui(a), p);
 	const uint96 c = uint96_powm(uint96_set_ui(a), k, p, p_inv, p_shift, a_inv);
@@ -511,7 +526,7 @@ void check_factors(__global const uint * restrict const prime_count, __global co
 	const ulong2 c_val = c_vector[i];
 	uint96 c = uint96_set(c_val.s0, (uint32)(c_val.s1));
 
-	for (uint32 i = 0; i < 1024; ++i)
+	for (size_t i = 0; i < 1024; ++i)
 	{
 		// c is a^{(2*i + 1).k}
 

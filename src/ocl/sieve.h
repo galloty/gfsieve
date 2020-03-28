@@ -453,16 +453,17 @@ static const char * const src_ocl_sieve = \
 "__kernel\n" \
 "void check_primes(__global uint * restrict const prime_count, __global ulong2 * restrict const prime_vector, const ulong i)\n" \
 "{\n" \
-"	const uint96 k = uint96_set((i << log2_prime_size) | get_global_id(0), (uint32)(i >> (64 - log2_prime_size)));\n" \
+"	const uint96 k = uint96_set((i << log2GlobalWorkSize) | get_global_id(0), (uint32)(i >> (64 - log2GlobalWorkSize)));\n" \
 "\n" \
-"	const uint96 pm1 = uint96_mul_2exp(k, gfn_n + 1);\n" \
-"	const uint96 p = uint96_or_ui(pm1, 1);\n" \
+"	const uint96 p = uint96_or_ui(uint96_mul_2exp(k, gfn_n + 1), 1);\n" \
 "	const int p_shift = uint96_log2(p) - 1;\n" \
 "	const uint96 p_inv = uint96_barrett_inv(p, p_shift);\n" \
 "\n" \
 "	// 2-prp\n" \
-"	const uint96 r1 = uint96_two_powm(pm1, p, p_inv, p_shift);\n" \
-"	if (uint96_is_equal_ui(r1, 1))\n" \
+"	uint96 r = uint96_two_powm(k, p, p_inv, p_shift);\n" \
+"	for (size_t i = 0; i < gfn_n + 1; ++i) r = uint96_square_mod(r, p, p_inv, p_shift);\n" \
+"\n" \
+"	if (uint96_is_equal_ui(r, 1))\n" \
 "	{\n" \
 "		const uint prime_index = atomic_inc(prime_count);\n" \
 "		prime_vector[prime_index] = (ulong2)(p.s0, (ulong)(p.s1));\n" \
@@ -484,13 +485,27 @@ static const char * const src_ocl_sieve = \
 "	const int p_shift = uint96_log2(p) - 1;\n" \
 "	const uint96 p_inv = uint96_barrett_inv(p, p_shift);\n" \
 "\n" \
-"	uint32 a = 3;\n" \
-"	for (; a < 256; a += 2)\n" \
+"	uint32 a;\n" \
+"	if (uint96_mod_ui(p, 3) == 2) { a = 3; }\n" \
+"	else\n" \
 "	{\n" \
-"		const uint32 p_moda = uint96_mod_ui(p, a);\n" \
-"		if (jacobi(p_moda, a) == -1) break;\n" \
+"		const uint32 pmod5 = uint96_mod_ui(p, 5);\n" \
+"		if ((pmod5 == 2) || (pmod5 == 3)) { a = 5; }\n" \
+"		else\n" \
+"		{\n" \
+"			const uint32 pmod7 = uint96_mod_ui(p, 7);\n" \
+"			if ((pmod7 == 3) || (pmod7 == 5) || (pmod7 == 6)) { a = 7; }\n" \
+"			else\n" \
+"			{\n" \
+"				for (a = 11; a < 256; a += 2)\n" \
+"				{\n" \
+"					const uint32 pmoda = uint96_mod_ui(p, a);\n" \
+"					if (jacobi(pmoda, a) == -1) break;\n" \
+"				}\n" \
+"				if (a >= 256) return;	// error?\n" \
+"			}\n" \
+"		}\n" \
 "	}\n" \
-"	if (a >= 256) return;	// error?\n" \
 "\n" \
 "	const uint96 a_inv = uint96_shoup_inv(uint96_set_ui(a), p);\n" \
 "	const uint96 c = uint96_powm(uint96_set_ui(a), k, p, p_inv, p_shift, a_inv);\n" \
@@ -519,7 +534,7 @@ static const char * const src_ocl_sieve = \
 "	const ulong2 c_val = c_vector[i];\n" \
 "	uint96 c = uint96_set(c_val.s0, (uint32)(c_val.s1));\n" \
 "\n" \
-"	for (uint32 i = 0; i < 1024; ++i)\n" \
+"	for (size_t i = 0; i < 1024; ++i)\n" \
 "	{\n" \
 "		// c is a^{(2*i + 1).k}\n" \
 "\n" \
