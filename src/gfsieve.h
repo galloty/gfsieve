@@ -162,11 +162,11 @@ public:
 	{
 		std::cout << " auto-tuning...\r";
 
-		double bestTime = 1e100;
-		int log2GlobalWorkSize = 15;
+		int log2GlobalWorkSize = 18;
 		size_t localWorkSize = 0;
 
-		for (int l = 15; l <= 20; ++l)
+		double bestTime = 1e100;
+		for (int l = 17; l <= 20; ++l)
 		{
 			const size_t primeSize = size_t(1) << l;
 
@@ -249,6 +249,8 @@ public:
 
 		std::cout << " terminating...         \r";
 		saveFactors(engine, n, startTime, double(i_max - i_min) / cnt);
+
+		// engine.displayProfiles(1);
 
 		clearEngine(engine);
 
