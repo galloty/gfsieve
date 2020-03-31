@@ -158,7 +158,7 @@ static const char * const src_ocl_sieve = \
 "\n" \
 "inline uint96 uint96_set(const uint64 s0, const uint32 s1) { uint96 r; r.s0 = s0; r.s1 = s1; return r; }\n" \
 "\n" \
-"inline bool uint96_is_even(const uint96 x) { return (x.s0 % 2 == 0); }\n" \
+"inline bool uint96_is_odd(const uint96 x) { return (x.s0 % 2 != 0); }\n" \
 "\n" \
 "inline bool uint96_is_negative(const uint96 x) { return ((int)(x.s1) < 0); }\n" \
 "\n" \
@@ -594,22 +594,31 @@ static const char * const src_ocl_sieve = \
 "	const ulong2 c_val = c_vector[i];\n" \
 "	uint96 c = uint96_set(c_val.s0, (uint32)(c_val.s1));\n" \
 "\n" \
+"	bool found = false;\n" \
 "	for (size_t i = 0; i < 1024; ++i)\n" \
 "	{\n" \
-"		// c is a^{(2*i + 1).k}\n" \
-"\n" \
-"		const uint96 pmc = uint96_sub(p, c);\n" \
-"		const uint96 b = uint96_is_even(c) ? c : pmc;\n" \
-"		if (uint96_is_less_or_equal_ui(b, 2000000000))\n" \
-"		{\n" \
-"			const uint factor_index = atomic_inc(factor_count);\n" \
-"			factor[factor_index] = (ulong2)(p.s0, p.s1 | (b.s0 << 32));\n" \
-"		}\n" \
-"\n" \
-"		c = uint96_mul_mod(c, a2k, p, a2k_inv);\n" \
+"		if (uint96_is_odd(c)) c = uint96_sub(p, c);\n" \
+"		found |= uint96_is_less_or_equal_ui(c, 2000000000);\n" \
+"		c = uint96_mul_mod(c, a2k, p, a2k_inv);		// c = a^{(2*i + 1).k}\n" \
 "	}\n" \
 "\n" \
 "	c_vector[i] = (ulong2)(c.s0, c.s1);\n" \
+"\n" \
+"	if (found)\n" \
+"	{\n" \
+"		c = uint96_set(c_val.s0, (uint32)(c_val.s1));\n" \
+"\n" \
+"		for (size_t i = 0; i < 1024; ++i)\n" \
+"		{\n" \
+"			if (uint96_is_odd(c)) c = uint96_sub(p, c);\n" \
+"			if (uint96_is_less_or_equal_ui(c, 2000000000))\n" \
+"			{\n" \
+"				const uint factor_index = atomic_inc(factor_count);\n" \
+"				factor[factor_index] = (ulong2)(p.s0, p.s1 | (c.s0 << 32));\n" \
+"			}\n" \
+"			c = uint96_mul_mod(c, a2k, p, a2k_inv);\n" \
+"		}\n" \
+"	}\n" \
 "}\n" \
 "\n" \
 "__kernel\n" \

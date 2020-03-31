@@ -150,7 +150,7 @@ inline uint96 uint96_set_ui(const uint64 n) { uint96 r; r.s0 = n; r.s1 = 0; retu
 
 inline uint96 uint96_set(const uint64 s0, const uint32 s1) { uint96 r; r.s0 = s0; r.s1 = s1; return r; }
 
-inline bool uint96_is_even(const uint96 x) { return (x.s0 % 2 == 0); }
+inline bool uint96_is_odd(const uint96 x) { return (x.s0 % 2 != 0); }
 
 inline bool uint96_is_negative(const uint96 x) { return ((int)(x.s1) < 0); }
 
@@ -586,22 +586,31 @@ void check_factors(__global const uint * restrict const prime_count, __global co
 	const ulong2 c_val = c_vector[i];
 	uint96 c = uint96_set(c_val.s0, (uint32)(c_val.s1));
 
+	bool found = false;
 	for (size_t i = 0; i < 1024; ++i)
 	{
-		// c is a^{(2*i + 1).k}
-
-		const uint96 pmc = uint96_sub(p, c);
-		const uint96 b = uint96_is_even(c) ? c : pmc;
-		if (uint96_is_less_or_equal_ui(b, 2000000000))
-		{
-			const uint factor_index = atomic_inc(factor_count);
-			factor[factor_index] = (ulong2)(p.s0, p.s1 | (b.s0 << 32));
-		}
-
-		c = uint96_mul_mod(c, a2k, p, a2k_inv);
+		if (uint96_is_odd(c)) c = uint96_sub(p, c);
+		found |= uint96_is_less_or_equal_ui(c, 2000000000);
+		c = uint96_mul_mod(c, a2k, p, a2k_inv);		// c = a^{(2*i + 1).k}
 	}
 
 	c_vector[i] = (ulong2)(c.s0, c.s1);
+
+	if (found)
+	{
+		c = uint96_set(c_val.s0, (uint32)(c_val.s1));
+
+		for (size_t i = 0; i < 1024; ++i)
+		{
+			if (uint96_is_odd(c)) c = uint96_sub(p, c);
+			if (uint96_is_less_or_equal_ui(c, 2000000000))
+			{
+				const uint factor_index = atomic_inc(factor_count);
+				factor[factor_index] = (ulong2)(p.s0, p.s1 | (c.s0 << 32));
+			}
+			c = uint96_mul_mod(c, a2k, p, a2k_inv);
+		}
+	}
 }
 
 __kernel

@@ -38,7 +38,10 @@ public:
 protected:
 	volatile bool _quit = false;
 	const size_t _factorSize = size_t(1) << 24;
+	uint32_t _n = 0;
 	size_t _savedCount = 0;
+	timer::time _startTime;
+	std::string _outFilename;
 
 private:
 	static bool readOpenCL(const char * const clFileName, const char * const headerFileName, const char * const varName, std::stringstream & src)
@@ -79,13 +82,13 @@ private:
 	}
 
 private:
-	void initEngine(engine & engine, const uint32_t n, const int log2GlobalWorkSize) const
+	void initEngine(engine & engine, const int log2GlobalWorkSize) const
 	{
 		const size_t globalWorkSize = size_t(1) << log2GlobalWorkSize;
 
 		std::stringstream src;
 		src << "#define\tlog2GlobalWorkSize\t" << log2GlobalWorkSize << std::endl;
-		src << "#define\tgfn_n\t" << n << std::endl;
+		src << "#define\tgfn_n\t" << _n << std::endl;
 		src << std::endl;
 
 		if (!readOpenCL("ocl/sieve.cl", "src/ocl/sieve.h", "src_ocl_sieve", src)) src << src_ocl_sieve;
@@ -123,33 +126,35 @@ private:
 	}
 
 private:
-	void saveFactors(engine & engine, const uint32_t n, const timer::time & startTime, const double percentDone)
+	void saveFactors(engine & engine, const double percentDone)
 	{
 		const size_t factorCount = engine.readFactorCount();
-		if (_savedCount == factorCount) return;
-		const double elapsedTime = timer::diffTime(timer::currentTime(), startTime);
+		const double elapsedTime = timer::diffTime(timer::currentTime(), _startTime);
 
 		if (factorCount >= _factorSize) throw std::runtime_error("Internal error detected");
 
-		const uint32_t N = uint32_t(1) << n;
-
-		std::vector<cl_ulong2> factor(factorCount);
-		engine.readFactors(factor.data(), factorCount);
-
-		std::ofstream resFile("res.txt", std::ios::app);
-		if (resFile.is_open())
+		if (_savedCount != factorCount)
 		{
-			for (size_t i = _savedCount; i < factorCount; ++i)
+			const uint32_t N = uint32_t(1) << _n;
+
+			std::vector<cl_ulong2> factor(factorCount);
+			engine.readFactors(factor.data(), factorCount);
+
+			std::ofstream resFile(_outFilename, std::ios::app);
+			if (resFile.is_open())
 			{
-				const cl_ulong2 & f = factor[i];
-				const uint32_t b = uint32_t(f.s[1] >> 32);
-				char str[32]; uint96_get_str(f.s[0], uint32_t(f.s[1]), str);
-				std::ostringstream ss; ss << str << " | " << b << "^" << N << "+1" << std::endl;
-				resFile << ss.str();
-				std::cout << ss.str();
+				for (size_t i = _savedCount; i < factorCount; ++i)
+				{
+					const cl_ulong2 & f = factor[i];
+					const uint32_t b = uint32_t(f.s[1] >> 32);
+					char str[32]; uint96_get_str(f.s[0], uint32_t(f.s[1]), str);
+					std::ostringstream ss; ss << str << " | " << b << "^" << N << "+1" << std::endl;
+					resFile << ss.str();
+					std::cout << ss.str();
+				}
+				resFile.close();
+				_savedCount = factorCount;
 			}
-			resFile.close();
-			_savedCount = factorCount;
 		}
 
 		std::ostringstream ss; ss << std::setprecision(3) << 86400 / (elapsedTime * percentDone) << " P/day";
@@ -157,68 +162,79 @@ private:
 		std::cout << factorCount << " factors, time = " << runtime << ", " << ss.str() << std::endl;
 	}
 
-public:
-	bool check(engine & engine, const uint32_t n, const uint32_t p_min, const uint32_t p_max)
+private:
+	void autoTuning(engine & engine, const uint32_t p_min, int & log2GlobalWorkSize, size_t & localWorkSize)
 	{
 		std::cout << " auto-tuning...\r";
 
-		int log2GlobalWorkSize = 18;
-		size_t localWorkSize = 0;
+		const size_t maxWorkGroupSize = engine.getMaxWorkGroupSize();
 
 		double bestTime = 1e100;
-		for (int l = 17; l <= 20; ++l)
+		for (int log2Global = 17; log2Global <= 21; ++log2Global)
 		{
-			const size_t primeSize = size_t(1) << l;
+			const size_t global = size_t(1) << log2Global;
 
 			engine.setProfiling(true);
-			initEngine(engine, n, l);
+			initEngine(engine, log2Global);
 			
-			const double f = 1e15 / pow(2.0, double(n + 1 + l));
+			const double f = 1e15 / pow(2.0, double(_n + 1 + log2Global));
 			const uint64_t i = uint64_t(floor(p_min * f));
 
-			for (int k = 0; k < 5; ++k)
+			for (size_t local = 8; local <= maxWorkGroupSize; local *= 2)
 			{
-				engine.checkPrimes(primeSize, i);
-				engine.initFactors(primeSize);
-				const size_t worksize = (k == 0) ? 0 : (size_t(16) << k);
-				engine.checkFactors(primeSize, n, worksize);
+				if (_quit) return;
+
+				engine.checkPrimes(global, i);
+				engine.initFactors(global);
+				engine.checkFactors(global, _n, (local == 8) ? 0 : local);
 				engine.clearPrimes();
 				engine.readFactorCount();
 
-				const double time = engine.getProfileTime() / double(primeSize);
+				const double time = engine.getProfileTime() / double(global);
 				if (time < bestTime)
 				{
 					bestTime = time;
-					log2GlobalWorkSize = l;
-					localWorkSize = worksize;
+					log2GlobalWorkSize = log2Global;
+					localWorkSize = (local == 8) ? 0 : local;
 				}
 
 				engine.resetProfiles();
-
-				if (_quit) return true;
 			}
 
 			clearEngine(engine);
 		}
+	}
+
+public:
+	bool check(engine & engine, const uint32_t n, const uint32_t p_min, const uint32_t p_max)
+	{
+		_n = n;
+		_savedCount = 0;
+		std::stringstream ss; ss << "gf" << n << "_" << p_min << "_" << p_max << ".txt";
+		_outFilename = ss.str();
+
+		int log2GlobalWorkSize = 18;
+		size_t localWorkSize = 0;
+		autoTuning(engine, p_min, log2GlobalWorkSize, localWorkSize);
 
 		const size_t globalWorkSize = size_t(1) << log2GlobalWorkSize;
 
 		std::cout << "globalWorkSize = " << globalWorkSize << ", localWorkSize = " << localWorkSize << std::endl;
 
-		_savedCount = 0;
-
 		engine.setProfiling(false);
-		initEngine(engine, n, log2GlobalWorkSize);
+		initEngine(engine, log2GlobalWorkSize);
 
 		const double f = 1e15 / pow(2.0, double(n + 1 + log2GlobalWorkSize));
 		const uint64_t i_min = uint64_t(floor(p_min * f)), i_max = uint64_t(ceil(p_max * f));
 
-		const timer::time startTime = timer::currentTime();
-		timer::time displayTime = startTime, recordTime = startTime;
+		_startTime = timer::currentTime();
+		timer::time displayTime = _startTime, recordTime = _startTime;
 
 		uint64_t cnt = 0;
 		for (uint64_t i = i_min; i < i_max; ++i)
 		{
+			if (_quit) break;
+
 			engine.checkPrimes(globalWorkSize, i);
 			// const size_t primeCount = engine.readPrimeCount();
 			// std::cout << primeCount << " primes" << std::endl;
@@ -228,8 +244,6 @@ public:
 			// std::cout << factorCount << " factors" << std::endl;
 			engine.clearPrimes();
 			++cnt;
-
-			if (_quit) break;
 
 			const timer::time currentTime = timer::currentTime();
 
@@ -243,12 +257,15 @@ public:
 			if (timer::diffTime(currentTime, recordTime) > 300)
 			{
 				recordTime = currentTime;
-				saveFactors(engine, n, startTime, double(i_max - i_min) / cnt);
+				saveFactors(engine, double(i_max - i_min) / cnt);
 			}
 		}
 
-		std::cout << " terminating...         \r";
-		saveFactors(engine, n, startTime, double(i_max - i_min) / cnt);
+		if (cnt > 0)
+		{
+			std::cout << " terminating...         \r";
+			saveFactors(engine, double(i_max - i_min) / cnt);
+		}
 
 		// engine.displayProfiles(1);
 
