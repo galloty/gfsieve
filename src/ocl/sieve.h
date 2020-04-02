@@ -176,20 +176,6 @@ static const char * const src_ocl_sieve = \
 "	return r;\n" \
 "}\n" \
 "\n" \
-"inline uint96 uint96_add_ui(const uint96 x, const uint64 n)\n" \
-"{\n" \
-"	uint96 r;\n" \
-"#ifdef PTX_ASM\n" \
-"	asm volatile (\"add.cc.u64 %0, %1, %2;\" : \"=l\" (r.s0) : \"l\" (x.s0), \"l\" (n));\n" \
-"	asm volatile (\"addc.u32 %0, %1, 0;\" : \"=r\" (r.s1) : \"r\" (x.s1));\n" \
-"#else\n" \
-"	const uint64 s0 = x.s0 + n;\n" \
-"	const uint32 c = (s0 < n) ? 1 : 0;\n" \
-"	r.s0 = s0; r.s1 = x.s1 + c;\n" \
-"#endif\n" \
-"	return r;\n" \
-"}\n" \
-"\n" \
 "inline uint96 uint96_add(const uint96 x, const uint96 y)\n" \
 "{\n" \
 "	uint96 r;\n" \
@@ -233,8 +219,6 @@ static const char * const src_ocl_sieve = \
 "	return r;\n" \
 "}\n" \
 "\n" \
-"inline uint128 uint128_set(const uint96 x) { uint128 r; r.s0 = x.s0; r.s1 = x.s1; return r; }\n" \
-"\n" \
 "inline uint128 uint128_add_ui(const uint128 x, const uint64 n)\n" \
 "{\n" \
 "	uint128 r;\n" \
@@ -249,29 +233,9 @@ static const char * const src_ocl_sieve = \
 "	return r;\n" \
 "}\n" \
 "\n" \
-"inline uint128 uint128_add(const uint128 x, const uint128 y)\n" \
-"{\n" \
-"	uint128 r;\n" \
-"#ifdef PTX_ASM\n" \
-"	asm volatile (\"add.cc.u64 %0, %1, %2;\" : \"=l\" (r.s0) : \"l\" (x.s0), \"l\" (y.s0));\n" \
-"	asm volatile (\"addc.u64 %0, %1, %2;\" : \"=l\" (r.s1) : \"l\" (x.s1), \"l\" (y.s1));\n" \
-"#else\n" \
-"	const uint64 s0 = x.s0 + y.s0;\n" \
-"	const uint32 c = (s0 < y.s0) ? 1 : 0;\n" \
-"	r.s0 = s0; r.s1 = x.s1 + y.s1 + c;\n" \
-"#endif\n" \
-"	return r;\n" \
-"}\n" \
-"\n" \
 "inline uint128 uint128_mul_64_64(const uint64 n, const uint64 m)\n" \
 "{\n" \
 "	uint128 r; r.s0 = n * m; r.s1 = mul_hi(n, m);\n" \
-"	return r;\n" \
-"}\n" \
-"\n" \
-"inline uint96 uint96_mul_64_32(const uint64 n, const uint32 m)\n" \
-"{\n" \
-"	uint96 r; r.s0 = n * m; r.s1 = (uint32)(mul_hi(n, (uint64)(m)));\n" \
 "	return r;\n" \
 "}\n" \
 "\n" \
@@ -301,9 +265,9 @@ static const char * const src_ocl_sieve = \
 "inline uint96 uint96_mul_hi_ceil(const uint96 x, const uint96 y)\n" \
 "{\n" \
 "	uint96 r;\n" \
-"#ifdef PTX_ASM\n" \
 "	const uint32 a0 = (uint32)(x.s0), a1 = (uint32)(x.s0 >> 32), a2 = x.s1;\n" \
 "	const uint32 b0 = (uint32)(y.s0), b1 = (uint32)(y.s0 >> 32), b2 = y.s1;\n" \
+"#ifdef PTX_ASM\n" \
 "	uint32 c1 = mul_hi(a0, b0), c2, c3, c4, c5;\n" \
 "\n" \
 "	asm volatile (\"mad.lo.cc.u32 %0, %1, %2, %3;\" : \"=r\" (c1) : \"r\" (a0), \"r\" (b1), \"r\" (c1));\n" \
@@ -332,15 +296,15 @@ static const char * const src_ocl_sieve = \
 "\n" \
 "	r.s0 = upsample(c4, c3); r.s1 = c5;\n" \
 "#else\n" \
-"	const uint96 s10 = uint96_mul_64_32(y.s0, x.s1);	// s10 < 2^95\n" \
-"	const uint96 s01 = uint96_mul_64_32(x.s0, y.s1);	// s01 < 2^96\n" \
-"	const uint96 s = uint96_add_ui(s10, mul_hi(x.s0, y.s0));	// s < 2^96\n" \
+"	uint64 c1 = mul_hi(a0, b0), c2 = mul_hi(a0, b1), c3 = mad_hi(a0, b2, (uint32)(1)), c4 = mul_hi(a1, b2), c5 = mul_hi(a2, b2);\n" \
 "\n" \
-"	uint128 s12 = uint128_add(uint128_set(s01), uint128_set(s));\n" \
-"	s12.s1 += x.s1 * (uint64)(y.s1);\n" \
+"	c1 += a0 * b1; c1 += a1 * b0;\n" \
+"	c2 += mul_hi(a1, b0); c2 += a1 * b1; c2 += a0 * b2; c2 += a2 * b0; c2 += (c1 >> 32);\n" \
+"	c3 += mul_hi(a1, b1); c3 += a1 * b2; c3 += a2 * b1; c3 += mul_hi(a2, b0); c3 += (c2 >> 32);\n" \
+"	c4 += a2 * b2; c4 += mul_hi(a2, b1); c4 += (c3 >> 32);\n" \
+"	c5 += (c4 >> 32);\n" \
 "\n" \
-"	r.s0 = (s12.s0 >> 32) | (s12.s1 << 32); r.s1 = (uint32)(s12.s1 >> 32);\n" \
-"	r = uint96_add_ui(r, 1);\n" \
+"	r.s0 = ((uint64)(c4) << 32) | (uint32)c3; r.s1 = (uint32)c5;\n" \
 "#endif\n" \
 "	return r;\n" \
 "}\n" \
