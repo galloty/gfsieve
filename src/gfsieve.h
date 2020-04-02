@@ -39,6 +39,7 @@ protected:
 	volatile bool _quit = false;
 	const size_t _factorSize = size_t(1) << 24;
 	uint32_t _n = 0;
+	size_t _factorsLoop = 0;
 	size_t _savedCount = 0;
 	timer::time _startTime;
 	std::string _outFilename;
@@ -89,6 +90,7 @@ private:
 		std::stringstream src;
 		src << "#define\tlog2GlobalWorkSize\t" << log2GlobalWorkSize << std::endl;
 		src << "#define\tgfn_n\t" << _n << std::endl;
+		src << "#define\tfactors_loop\t" << _factorsLoop << std::endl;
 		src << std::endl;
 
 		if (!readOpenCL("ocl/sieve.cl", "src/ocl/sieve.h", "src_ocl_sieve", src)) src << src_ocl_sieve;
@@ -168,6 +170,7 @@ private:
 		std::cout << " auto-tuning...\r";
 
 		const size_t maxWorkGroupSize = engine.getMaxWorkGroupSize();
+		const size_t N_2_factors_loop = (size_t(1) << (_n - 1)) / _factorsLoop;
 
 		double bestTime = 1e100;
 		for (int log2Global = 17; log2Global <= 21; ++log2Global)
@@ -186,7 +189,7 @@ private:
 
 				engine.checkPrimes(global, i);
 				engine.initFactors(global);
-				engine.checkFactors(global, _n, (local == 8) ? 0 : local);
+				engine.checkFactors(global, N_2_factors_loop, (local == 8) ? 0 : local);
 				engine.clearPrimes();
 				engine.readFactorCount();
 
@@ -209,6 +212,7 @@ public:
 	bool check(engine & engine, const uint32_t n, const uint32_t p_min, const uint32_t p_max)
 	{
 		_n = n;
+		_factorsLoop = size_t(1) << std::min(_n - 1, 10u);
 		_savedCount = 0;
 		std::stringstream ss; ss << "gf" << n << "_" << p_min << "_" << p_max << ".txt";
 		_outFilename = ss.str();
@@ -230,6 +234,8 @@ public:
 		_startTime = timer::currentTime();
 		timer::time displayTime = _startTime, recordTime = _startTime;
 
+		const size_t N_2_factors_loop = (size_t(1) << (_n - 1)) / _factorsLoop;
+
 		uint64_t cnt = 0;
 		for (uint64_t i = i_min; i < i_max; ++i)
 		{
@@ -239,7 +245,7 @@ public:
 			// const size_t primeCount = engine.readPrimeCount();
 			// std::cout << primeCount << " primes" << std::endl;
 			engine.initFactors(globalWorkSize);
-			engine.checkFactors(globalWorkSize, n, 0);
+			engine.checkFactors(globalWorkSize, N_2_factors_loop, 0);
 			// const size_t factorCount = engine.readFactorCount();
 			// std::cout << factorCount << " factors" << std::endl;
 			engine.clearPrimes();

@@ -110,9 +110,9 @@ public:
 	}
 
 public:
-	void checkFactors(const size_t count, const uint32_t n, const size_t worksize)
+	void checkFactors(const size_t count, const uint32_t N_2_factors_loop, const size_t worksize)
 	{
-		for (size_t i = 0, N_2_1024 = size_t(1) << (n - 1 - 10); i < N_2_1024; ++i)
+		for (size_t i = 0; i < N_2_factors_loop; ++i)
 		{
 			_executeKernel(_check_factors, count, worksize);
 		}

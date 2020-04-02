@@ -147,7 +147,7 @@ public:
 			}
 		}
 
-		if ((n < 12) || (n > 24)) return;
+		if ((n < 6) || (n > 24)) return;
 		if (p_min < 1) return;
 		if (p_max <= p_min) return;
 

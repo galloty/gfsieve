@@ -551,7 +551,7 @@ void check_factors(__global const uint * restrict const prime_count, __global co
 	uint96 c = uint96_set(c_val.s0, (uint32)(c_val.s1));
 
 	bool found = false;
-	for (size_t i = 0; i < 1024; ++i)
+	for (size_t i = 0; i < factors_loop; ++i)
 	{
 		if (uint96_is_odd(c)) c = uint96_sub(p, c);
 		found |= uint96_is_less_or_equal_ui(c, 2000000000);
@@ -564,7 +564,7 @@ void check_factors(__global const uint * restrict const prime_count, __global co
 	{
 		c = uint96_set(c_val.s0, (uint32)(c_val.s1));
 
-		for (size_t i = 0; i < 1024; ++i)
+		for (size_t i = 0; i < factors_loop; ++i)
 		{
 			if (uint96_is_odd(c)) c = uint96_sub(p, c);
 			if (uint96_is_less_or_equal_ui(c, 2000000000))
