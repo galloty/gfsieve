@@ -87,7 +87,7 @@ private:
 #endif
 
 		std::ostringstream ss;
-		ss << "gfsieve 0.4.0 " << sysver << ssc.str() << std::endl;
+		ss << "gfsieve 0.5.0 " << sysver << ssc.str() << std::endl;
 		ss << "Copyright (c) 2020, Yves Gallot" << std::endl;
 		ss << "gfsieve is free source code, under the MIT license." << std::endl;
 		if (nl) ss << std::endl;
