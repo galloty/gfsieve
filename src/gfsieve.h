@@ -16,6 +16,7 @@ Please give feedback to the authors if improvement is realized. It is distribute
 #include <cmath>
 
 #include "ocl/sieve.h"
+#include "ocl/sieve64.h"
 
 class gfsieve
 {
@@ -38,6 +39,7 @@ public:
 protected:
 	volatile bool _quit = false;
 	const size_t _factorSize = size_t(1) << 24;
+	bool _64bit = false;
 	uint32_t _n = 0;
 	size_t _factorsLoop = 0;
 	size_t _savedCount = 0;
@@ -93,7 +95,14 @@ private:
 		src << "#define\tfactors_loop\t" << _factorsLoop << std::endl;
 		src << std::endl;
 
-		if (!readOpenCL("ocl/sieve.cl", "src/ocl/sieve.h", "src_ocl_sieve", src)) src << src_ocl_sieve;
+		if (_64bit)
+		{
+			if (!readOpenCL("ocl/sieve64.cl", "src/ocl/sieve64.h", "src_ocl_sieve64", src)) src << src_ocl_sieve64;
+		}
+		else
+		{
+			if (!readOpenCL("ocl/sieve.cl", "src/ocl/sieve.h", "src_ocl_sieve", src)) src << src_ocl_sieve;
+		}
 
 		engine.loadProgram(src.str());
 		engine.allocMemory(globalWorkSize, _factorSize);
@@ -211,11 +220,14 @@ private:
 public:
 	bool check(engine & engine, const uint32_t n, const uint32_t p_min, const uint32_t p_max)
 	{
+		_64bit = (p_max + 1 <= 9223);	// 2^63 / 10^15
 		_n = n;
 		_factorsLoop = size_t(1) << std::min(_n - 1, 10u);
 		_savedCount = 0;
 		std::stringstream ss; ss << "gf" << n << "_" << p_min << "_" << p_max << ".txt";
 		_outFilename = ss.str();
+
+		std::cout << (_64bit ? "64" : "96") << "-bit mode" << std::endl;
 
 		int log2GlobalWorkSize = 18;
 		size_t localWorkSize = 0;

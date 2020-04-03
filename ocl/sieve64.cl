@@ -150,23 +150,9 @@ inline uint96 uint96_set_ui(const uint64 n) { uint96 r; r.s0 = n; r.s1 = 0; retu
 
 inline uint96 uint96_set(const uint64 s0, const uint32 s1) { uint96 r; r.s0 = s0; r.s1 = s1; return r; }
 
-inline bool uint96_is_odd(const uint96 x) { return (x.s0 % 2 != 0); }
-
 inline bool uint96_is_negative(const uint96 x) { return ((int)(x.s1) < 0); }
 
-inline bool uint96_is_equal_ui(const uint96 x, const uint64 n) { return ((x.s0 == n) && (x.s1 == 0)); }
-
-inline bool uint96_is_less_or_equal_ui(const uint96 x, const uint64 n) { return ((x.s0 <= n) && (x.s1 == 0)); }
-
-inline bool uint96_is_greater_or_equal(const uint96 x, const uint96 y) { return (x.s1 > y.s1) || ((x.s1 == y.s1) && (x.s0 >= y.s0)); }
-
-inline int uint96_log2(const uint96 x) { return (x.s1 == 0) ? (63 - clz(x.s0)) : (95 - clz(x.s1)); }
-
-inline uint96 uint96_or_ui(const uint96 x, const uint64 n)
-{
-	uint96 r; r.s0 = x.s0 | n; r.s1 = x.s1;
-	return r;
-}
+inline int uint64_log2(const uint64 x) { return 63 - clz(x); }
 
 inline uint96 uint96_add(const uint96 x, const uint96 y)
 {
@@ -192,42 +178,6 @@ inline uint96 uint96_sub(const uint96 x, const uint96 y)
 	const uint32 c = (x.s0 < y.s0) ? 1 : 0;
 	r.s0 = x.s0 - y.s0; r.s1 = x.s1 - y.s1 - c;
 #endif
-	return r;
-}
-
-inline uint96 uint96_mul_2exp(const uint96 x, const int s)
-{
-	uint96 r;
-	r.s0 = x.s0 << s;
-	r.s1 = (x.s1 << s) | (uint32)(x.s0 >> (64 - s));
-	return r;
-}
-
-inline uint96 uint96_div_2exp(const uint96 x, const int s)
-{
-	uint96 r;
-	r.s0 = (x.s0 >> s) | ((uint64)(x.s1) << (64 - s));
-	r.s1 = x.s1 >> s;
-	return r;
-}
-
-inline uint128 uint128_add_ui(const uint128 x, const uint64 n)
-{
-	uint128 r;
-#ifdef PTX_ASM
-	asm volatile ("add.cc.u64 %0, %1, %2;" : "=l" (r.s0) : "l" (x.s0), "l" (n));
-	asm volatile ("addc.u64 %0, %1, 0;" : "=l" (r.s1) : "l" (x.s1));
-#else
-	const uint64 s0 = x.s0 + n;
-	const uint32 c = (s0 < n) ? 1 : 0;
-	r.s0 = s0; r.s1 = x.s1 + c;
-#endif
-	return r;
-}
-
-inline uint128 uint128_mul_64_64(const uint64 n, const uint64 m)
-{
-	uint128 r; r.s0 = n * m; r.s1 = mul_hi(n, m);
 	return r;
 }
 
@@ -301,40 +251,22 @@ inline uint96 uint96_mul_hi_ceil(const uint96 x, const uint96 y)
 	return r;
 }
 
-inline uint32 uint96_mod_ui(const uint96 x, const uint32 n)	// n < 2^8
-{
-	const uint32 a72 = x.s1 >> 8;
-	const uint32 a48 = ((x.s1 & ((1 << 8) - 1)) << 16) | (uint32)(x.s0 >> 48);
-	const uint32 a24 = (uint32)(x.s0 >> 24) & ((1 << 24) - 1);
-	const uint32 a0 = (uint32)(x.s0) & ((1 << 24) - 1);
-
-	uint32 r = a72 % n;
-	r = ((r << 24) | a48) % n;
-	r = ((r << 24) | a24) % n;
-	r = ((r << 24) | a0) % n;
-	return r;
-}
-
-inline uint96 uint96_reduce(const uint96 x, const uint96 p)
-{
-	return uint96_is_greater_or_equal(x, p) ? uint96_sub(x, p) : x;
-}
-
 inline uint96 uint96_reduce_neg(const uint96 x, const uint96 p)
 {
 	return uint96_is_negative(x) ? uint96_add(x, p) : x;
 }
 
-inline uint96 uint96_dup_mod(const uint96 x, const uint96 p)
+inline uint64 uint64_dup_mod(const uint64 x, const uint64 p)
 {
-	return uint96_reduce(uint96_add(x, x), p);
+	const uint64 t = x + x;
+	return (t >= p) ? t - p : t;
 }
 
-inline double2 uint96_to_dd(const uint96 x)
+inline double2 uint64_to_dd(const uint64 x)
 {
 	double2 r;
-	r.s0 = ldexp((double)(((uint64)x.s1 << 16) | (x.s0 >> 48)), 48); r.s1 = 0;
-	r = dd_add_d(r, (double)(x.s0 & (((uint64)1 << 48) - 1)));
+	r.s0 = ldexp((double)(x >> 32), 32); r.s1 = 0;
+	r = dd_add_d(r, (double)(x & (((uint64)1 << 32) - 1)));
 	return r;
 }
 
@@ -349,119 +281,81 @@ inline uint96 dd_to_uint96(const double2 x)
 	return r;
 }
 
-inline uint96 uint96_barrett_inv(const uint96 p, const int p_shift)
+inline uint96 uint96_barrett_inv(const uint64 p, const int p_shift)
 {
 	double2 d; d.s0 = ldexp(1.0, 96 + p_shift); d.s1 = 0;
-	d = dd_floor(dd_div(d, uint96_to_dd(p)));
+	d = dd_floor(dd_div(d, uint64_to_dd(p)));
 	return dd_to_uint96(d);
 }
 
-inline uint96 uint96_shoup_inv(const uint96 x, const uint96 p, const int nbits)
+inline uint64 uint64_shoup_inv(const uint64 x, const uint64 p, const int nbits)
 {
-	double2 d; d.s0 = ldexp((double)(((uint64)x.s1 << 16) | (x.s0 >> 48)), 48 + nbits); d.s1 = 0;
-	d = dd_add_d(d, ldexp((double)(x.s0 & (((uint64)1 << 48) - 1)), nbits));
-	d = dd_floor(dd_div(d, uint96_to_dd(p)));
-	return dd_to_uint96(d);
+	double2 d; d.s0 = ldexp((double)(x >> 32), 32 + nbits); d.s1 = 0;
+	d = dd_add_d(d, ldexp((double)(x & (((uint64)1 << 32) - 1)), nbits));
+	d = dd_floor(dd_div(d, uint64_to_dd(p)));
+	return dd_to_uint96(d).s0;
 }
 
 // Barrett's product: let n = 95, r = ceil(log2(p)), p_shift = r - 2 = ceil(log2(p)) - 1, t = n + 1 = 96,
 // p_inv = floor(2^(s + t) / p). Then the number of iterations h = 1.
 // We must have x^2 < alpha.p with alpha = 2^(n-2). If p <= 2^(n-2) = 2^93 then x^2 < p^2 <= alpha.p.
-inline uint96 uint96_square_mod(const uint96 x, const uint96 p, const uint96 p_inv, const int p_shift)
+inline uint64 uint64_square_mod(const uint64 x, const uint64 p, const uint96 p_inv, const int p_shift)
 {
 #ifdef PTX_ASM
-	const uint32 a0 = (uint32)(x.s0), a1 = (uint32)(x.s0 >> 32), a2 = x.s1;
-	uint32 b0 = a0 * a0, b1, b2, b3, b4, b5;
+	const uint32 a0 = (uint32)(x), a1 = (uint32)(x >> 32);
+	uint32 b0 = a0 * a0, b1, b2, b3;
 
 	asm volatile ("mad.lo.cc.u32 %0, %1, %2, 0;" : "=r" (b1) : "r" (a0), "r" (a1));
 	asm volatile ("madc.hi.u32 %0, %1, %2, 0;" : "=r" (b2) : "r" (a0), "r" (a1));
 
-	asm volatile ("mad.lo.cc.u32 %0, %1, %2, %3;" : "=r" (b2) : "r" (a0), "r" (a2), "r" (b2));
-	asm volatile ("madc.hi.u32 %0, %1, %2, 0;" : "=r" (b3) : "r" (a0), "r" (a2));
-
-	asm volatile ("mad.lo.cc.u32 %0, %1, %2, %3;" : "=r" (b3) : "r" (a1), "r" (a2), "r" (b3));
-	asm volatile ("madc.hi.u32 %0, %1, %2, 0;" : "=r" (b4) : "r" (a1), "r" (a2));
-
 	asm volatile ("add.cc.u32 %0, %1, %2;" : "=r" (b1) : "r" (b1), "r" (b1));
-	asm volatile ("addc.cc.u32 %0, %1, %2;" : "=r" (b2) : "r" (b2), "r" (b2));
-	asm volatile ("addc.cc.u32 %0, %1, %2;" : "=r" (b3) : "r" (b3), "r" (b3));
-	asm volatile ("addc.u32 %0, %1, %2;" : "=r" (b4) : "r" (b4), "r" (b4));
+	asm volatile ("addc.u32 %0, %1, %2;" : "=r" (b2) : "r" (b2), "r" (b2));
 
 	asm volatile ("mad.hi.cc.u32 %0, %1, %2, %3;" : "=r" (b1) : "r" (a0), "r" (a0), "r" (b1));
 	asm volatile ("madc.lo.cc.u32 %0, %1, %2, %3;" : "=r" (b2) : "r" (a1), "r" (a1), "r" (b2));
-	asm volatile ("madc.hi.cc.u32 %0, %1, %2, %3;" : "=r" (b3) : "r" (a1), "r" (a1), "r" (b3));
-	asm volatile ("madc.lo.cc.u32 %0, %1, %2, %3;" : "=r" (b4) : "r" (a2), "r" (a2), "r" (b4));
-	asm volatile ("madc.hi.u32 %0, %1, %2, 0;" : "=r" (b5) : "r" (a2), "r" (a2));
+	asm volatile ("madc.hi.u32 %0, %1, %2, 0;" : "=r" (b3) : "r" (a1), "r" (a1));
 
-	const uint64 x2_0 = upsample(b1, b0), x2_1 = upsample(b3, b2), x2_2 = upsample(b5, b4);
+	const uint64 x2_0 = upsample(b1, b0), x2_1 = upsample(b3, b2);
 #else
-	const uint128 x2_00 = uint128_mul_64_64(x.s0, x.s0);
-	uint128 x2_12 = uint128_add_ui(uint128_mul_64_64(x.s0, x.s1 + x.s1), x2_00.s1);
-	x2_12.s1 += x.s1 * (uint64)(x.s1);
-
-	const uint64 x2_0 = x2_00.s0, x2_1 = x2_12.s0, x2_2 = x2_12.s1;
+	const uint64 x2_0 = x * x, x2_1 = mul_hi(x, x);
 #endif
 
 	uint96 q_p;
-	if (p_shift < 64)
-	{
-		q_p.s0 = (x2_0 >> p_shift) | (x2_1 << (64 - p_shift));
-		q_p.s1 = (uint32)(x2_1 >> p_shift) | (uint32)(x2_2 << (64 - p_shift));
-	}
-	else
-	{
-		const int s = p_shift - 64;
-		q_p.s0 = (x2_1 >> s) | (x2_2 << (64 - s));
-		q_p.s1 = (uint32)(x2_2 >> s);
-	}
+	q_p.s0 = (x2_0 >> p_shift) | (x2_1 << (64 - p_shift));
+	q_p.s1 = (uint32)(x2_1 >> p_shift);
 
-	const uint96 q = uint96_mul_hi_ceil(q_p, p_inv);
-	return uint96_reduce_neg(uint96_sub(uint96_set(x2_0, (uint32)(x2_1)), uint96_mul(q, p)), p);
+	const uint96 q = uint96_mul_hi_ceil(q_p, p_inv), p96 = uint96_set_ui(p);
+	return uint96_reduce_neg(uint96_sub(uint96_set(x2_0, (uint32)(x2_1)), uint96_mul(q, p96)), p96).s0;
 }
 
-// Shoup’s modular multiplication: p < 2^95 and w_inv = floor(w.2^96/p).
-inline uint96 uint96_mul_mod(const uint96 x, const uint96 w, const uint96 p, const uint96 w_inv)
+// Shoup’s modular multiplication: p < 2^63 and w_inv = floor(w.2^64/p).
+inline uint64 uint64_mul_mod(const uint64 x, const uint64 w, const uint64 p, const uint64 w_inv)
 {
-	const uint96 q = uint96_mul_hi_ceil(x, w_inv);
-	return uint96_reduce_neg(uint96_sub(uint96_mul(x, w), uint96_mul(q, p)), p);
+	const uint64 q = mul_hi(x, w_inv);
+	const uint64 t = x * w - q * p;
+	return (t >= p) ? t - p : t;
 }
 
-inline uint96 uint96_two_powm(const uint96 e, const uint96 p, const uint96 p_inv, const int p_shift)
+inline uint64 uint64_two_powm(const uint64 e, const uint64 p, const uint96 p_inv, const int p_shift)
 {
 	// x = 2^e mod p, left-to-right algorithm
-	uint96 r = uint96_set_ui(1);
-	if (e.s1 != 0)
+	uint64 r = 1;
+	for (int b = uint64_log2(e); b >= 0; --b)
 	{
-		for (int b = 31 - clz(e.s1); b >= 0; --b)
-		{
-			r = uint96_square_mod(r, p, p_inv, p_shift);
-			if ((e.s1 & ((uint32)(1) << b)) != 0) r = uint96_dup_mod(r, p);
-		}
-	}
-	for (int b = (e.s1 == 0) ? (63 - clz(e.s0)) : 63; b >= 0; --b)
-	{
-		r = uint96_square_mod(r, p, p_inv, p_shift);
-		if ((e.s0 & ((uint64)(1) << b)) != 0) r = uint96_dup_mod(r, p);
+		r = uint64_square_mod(r, p, p_inv, p_shift);
+		if ((e & ((uint64)(1) << b)) != 0) r = uint64_dup_mod(r, p);
 	}
 	return r;
 }
 
-inline uint96 uint96_powm(const uint96 a, const uint96 e, const uint96 p, const uint96 p_inv, const int p_shift, const uint96 a_inv)
+inline uint64 uint64_powm(const uint64 a, const uint64 e, const uint64 p, const uint96 p_inv, const int p_shift, const uint64 a_inv)
 {
 	// x = a^e mod p, left-to-right algorithm
-	uint96 r = uint96_set_ui(1);
-	if (e.s1 != 0)
+	uint64 r = 1;
+	for (int b = uint64_log2(e); b >= 0; --b)
 	{
-		for (int b = 31 - clz(e.s1); b >= 0; --b)
-		{
-			r = uint96_square_mod(r, p, p_inv, p_shift);
-			if ((e.s1 & ((uint32)(1) << b)) != 0) r = uint96_mul_mod(r, a, p, a_inv);
-		}
-	}
-	for (int b = (e.s1 == 0) ? (63 - clz(e.s0)) : 63; b >= 0; --b)
-	{
-		r = uint96_square_mod(r, p, p_inv, p_shift);
-		if ((e.s0 & ((uint64)(1) << b)) != 0) r = uint96_mul_mod(r, a, p, a_inv);
+		r = uint64_square_mod(r, p, p_inv, p_shift);
+		if ((e & ((uint64)(1) << b)) != 0) r = uint64_mul_mod(r, a, p, a_inv);
 	}
 	return r;
 }
@@ -469,20 +363,20 @@ inline uint96 uint96_powm(const uint96 a, const uint96 e, const uint96 p, const 
 __kernel
 void check_primes(__global uint * restrict const prime_count, __global ulong2 * restrict const prime_vector, const ulong i)
 {
-	const uint96 k = uint96_set((i << log2GlobalWorkSize) | get_global_id(0), (uint32)(i >> (64 - log2GlobalWorkSize)));
+	const uint64 k = (i << log2GlobalWorkSize) | get_global_id(0);
 
-	const uint96 p = uint96_or_ui(uint96_mul_2exp(k, gfn_n + 1), 1);
-	const int p_shift = uint96_log2(p) - 1;
+	const uint64 p = (k << (gfn_n + 1)) | 1;
+	const int p_shift = uint64_log2(p) - 1;
 	const uint96 p_inv = uint96_barrett_inv(p, p_shift);
 
 	// 2-prp
-	uint96 r = uint96_two_powm(k, p, p_inv, p_shift);
-	for (size_t i = 0; i < gfn_n + 1; ++i) r = uint96_square_mod(r, p, p_inv, p_shift);
+	uint64 r = uint64_two_powm(k, p, p_inv, p_shift);
+	for (size_t i = 0; i < gfn_n + 1; ++i) r = uint64_square_mod(r, p, p_inv, p_shift);
 
-	if (uint96_is_equal_ui(r, 1))
+	if (r == 1)
 	{
 		const uint prime_index = atomic_inc(prime_count);
-		prime_vector[prime_index] = (ulong2)(p.s0, (ulong)(p.s1));
+		prime_vector[prime_index] = (ulong2)(p, (ulong)(0));
 	}
 }
 
@@ -494,28 +388,27 @@ void init_factors(__global const uint * restrict const prime_count, __global con
 	const size_t i = get_global_id(0);
 	if (i >= *prime_count) return;
 
-	const ulong2 prm = prime_vector[i];
-	const uint96 p = uint96_set(prm.s0, (uint32)(prm.s1));
+	const uint64 p = prime_vector[i].s0;
 
-	const uint96 k = uint96_div_2exp(p, gfn_n + 1);
-	const int p_shift = uint96_log2(p) - 1;
+	const uint64 k = p >> (gfn_n + 1);
+	const int p_shift = uint64_log2(p) - 1;
 	const uint96 p_inv = uint96_barrett_inv(p, p_shift);
 
 	uint32 a;
-	if (uint96_mod_ui(p, 3) == 2) { a = 3; }
+	if ((p % 3) == 2) { a = 3; }
 	else
 	{
-		const uint32 pmod5 = uint96_mod_ui(p, 5);
+		const uint32 pmod5 = p % 5;
 		if ((pmod5 == 2) || (pmod5 == 3)) { a = 5; }
 		else
 		{
-			const uint32 pmod7 = uint96_mod_ui(p, 7);
+			const uint32 pmod7 = p % 7;
 			if ((pmod7 == 3) || (pmod7 == 5) || (pmod7 == 6)) { a = 7; }
 			else
 			{
 				for (a = 11; a < 256; a += 2)
 				{
-					const uint32 pmoda = uint96_mod_ui(p, a);
+					const uint32 pmoda = p % a;
 					if (jacobi(pmoda, a) == -1) break;
 				}
 				if (a >= 256) return;	// error?
@@ -523,14 +416,14 @@ void init_factors(__global const uint * restrict const prime_count, __global con
 		}
 	}
 
-	const uint96 a_inv = uint96_shoup_inv(uint96_set_ui(a), p, 96);
-	const uint96 c = uint96_powm(uint96_set_ui(a), k, p, p_inv, p_shift, a_inv);
-	c_vector[i] = (ulong2)(c.s0, c.s1);
+	const uint64 a_inv = uint64_shoup_inv(a, p, 64);
+	const uint64 c = uint64_powm(a, k, p, p_inv, p_shift, a_inv);
+	c_vector[i] = (ulong2)(c, 0);
 
-	const uint96 a2k = uint96_square_mod(c, p, p_inv, p_shift);
-	a2k_vector[i] = (ulong2)(a2k.s0, a2k.s1);
-	const uint96 a2k_inv = uint96_shoup_inv(a2k, p, 96);
-	a2k_inv_vector[i] = (ulong2)(a2k_inv.s0, a2k_inv.s1);
+	const uint64 a2k = uint64_square_mod(c, p, p_inv, p_shift);
+	a2k_vector[i] = (ulong2)(a2k, 0);
+	const uint64 a2k_inv = uint64_shoup_inv(a2k, p, 64);
+	a2k_inv_vector[i] = (ulong2)(a2k_inv, 0);
 }
 
 __kernel
@@ -541,40 +434,23 @@ void check_factors(__global const uint * restrict const prime_count, __global co
 	const size_t i = get_global_id(0);
 	if (i >= *prime_count) return;
 
-	const ulong2 prm = prime_vector[i];
-	const uint96 p = uint96_set(prm.s0, (uint32)(prm.s1));
-	const ulong2 a2k_val = a2k_vector[i];
-	const uint96 a2k = uint96_set(a2k_val.s0, (uint32)(a2k_val.s1));
-	const ulong2 a2k_inv_val = a2k_inv_vector[i];
-	const uint96 a2k_inv = uint96_set(a2k_inv_val.s0, (uint32)(a2k_inv_val.s1));
-	const ulong2 c_val = c_vector[i];
-	uint96 c = uint96_set(c_val.s0, (uint32)(c_val.s1));
+	const uint64 p = prime_vector[i].s0;
+	const uint64 a2k = a2k_vector[i].s0;
+	const uint64 a2k_inv = a2k_inv_vector[i].s0;
+	uint64 c = c_vector[i].s0;
 
-	bool found = false;
 	for (size_t i = 0; i < factors_loop; ++i)
 	{
-		if (uint96_is_odd(c)) c = uint96_sub(p, c);
-		found |= uint96_is_less_or_equal_ui(c, 2000000000);
-		c = uint96_mul_mod(c, a2k, p, a2k_inv);		// c = a^{(2*i + 1).k}
-	}
-
-	c_vector[i] = (ulong2)(c.s0, c.s1);
-
-	if (found)
-	{
-		c = uint96_set(c_val.s0, (uint32)(c_val.s1));
-
-		for (size_t i = 0; i < factors_loop; ++i)
+		if (c % 2 != 0) c = p - c;
+		if (c <= 2000000000)
 		{
-			if (uint96_is_odd(c)) c = uint96_sub(p, c);
-			if (uint96_is_less_or_equal_ui(c, 2000000000))
-			{
-				const uint factor_index = atomic_inc(factor_count);
-				factor[factor_index] = (ulong2)(p.s0, p.s1 | (c.s0 << 32));
-			}
-			c = uint96_mul_mod(c, a2k, p, a2k_inv);
+			const uint factor_index = atomic_inc(factor_count);
+			factor[factor_index] = (ulong2)(p, c << 32);
 		}
+		c = uint64_mul_mod(c, a2k, p, a2k_inv);		// c = a^{(2*i + 1).k}
 	}
+
+	c_vector[i].s0 = c;
 }
 
 __kernel
