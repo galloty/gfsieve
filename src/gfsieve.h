@@ -248,6 +248,7 @@ public:
 
 		const size_t N_2_factors_loop = (size_t(1) << (_n - 1)) / _factorsLoop;
 
+		const double total = double(i_max - i_min) / (p_max - p_min);
 		uint64_t cnt = 0;
 		for (uint64_t i = i_min; i < i_max; ++i)
 		{
@@ -275,14 +276,14 @@ public:
 			if (timer::diffTime(currentTime, recordTime) > 300)
 			{
 				recordTime = currentTime;
-				saveFactors(engine, double(i_max - i_min) / cnt);
+				saveFactors(engine, total / cnt);
 			}
 		}
 
 		if (cnt > 0)
 		{
 			std::cout << " terminating...         \r";
-			saveFactors(engine, double(i_max - i_min) / cnt);
+			saveFactors(engine, total / cnt);
 		}
 
 		// engine.displayProfiles(1);
