@@ -103,6 +103,7 @@ private:
 		ss << "  <p_min>                 the start of the p range, in P (10^15) values" << std::endl;
 		ss << "  <p_max>                 the end of the p range, in P (10^15) values" << std::endl;
 		ss << "  -d <n> or --device <n>  set device number=<n> (default 0)" << std::endl;
+		ss << "  -p                      display factors on the screen (default false)" << std::endl;
 		ss << "  -v or -V                print the startup banner and immediately exit" << std::endl;
 		ss << std::endl;
 		return ss.str();
@@ -135,6 +136,7 @@ public:
 		const uint32_t p_min = (args.size() > 1) ? std::atoi(args[1].c_str()) : 100000;
 		const uint32_t p_max = (args.size() > 2) ? std::atoi(args[2].c_str()) : 100001;
 		size_t d = 0;
+		bool display = false;
 		for (size_t i = 3, size = args.size(); i < size; ++i)
 		{
 			const std::string & arg = args[i];
@@ -145,6 +147,8 @@ public:
 				d = std::atoi(dev.c_str());
 				if (d >= platform.getDeviceCount()) throw std::runtime_error("invalid device number");
 			}
+
+			if (arg == "-p") display = true;
 		}
 
 		if ((n < 6) || (n > 24)) return;
@@ -154,7 +158,7 @@ public:
 		gfsieve & sieve = gfsieve::getInstance();
 
 		engine engine(platform, d);
-		sieve.check(engine, n, p_min, p_max);
+		sieve.check(engine, n, p_min, p_max, display);
 	}
 };
 

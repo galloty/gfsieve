@@ -12,7 +12,7 @@ Please give feedback to the authors if improvement is realized. It is distribute
 #include "engine.h"
 
 #include <thread>
-#include <chrono>
+#include <mutex>
 #include <cmath>
 
 #include "ocl/sieve.h"
@@ -40,11 +40,14 @@ protected:
 	volatile bool _quit = false;
 	const size_t _factorSize = size_t(1) << 24;
 	bool _64bit = false;
+	bool _display = false;
 	uint32_t _n = 0;
 	size_t _factorsLoop = 0;
 	size_t _savedCount = 0;
 	timer::time _startTime;
 	std::string _outFilename;
+	std::mutex _factor_mutex;
+	std::vector<cl_ulong2> _factor;
 
 private:
 	static bool readOpenCL(const char * const clFileName, const char * const headerFileName, const char * const varName, std::stringstream & src)
@@ -137,40 +140,67 @@ private:
 	}
 
 private:
-	void saveFactors(engine & engine, const double percentDone)
+	void readFactors(engine & engine, const double percentDone)
 	{
 		const size_t factorCount = engine.readFactorCount();
 		const double elapsedTime = timer::diffTime(timer::currentTime(), _startTime);
 
 		if (factorCount >= _factorSize) throw std::runtime_error("Internal error detected");
 
+		const std::lock_guard<std::mutex> lock(_factor_mutex);
+
+		std::ostringstream ss; ss << std::setprecision(3) << 86400 / (elapsedTime * percentDone) << " P/day";
+		const std::string runtime = timer::formatTime(elapsedTime);
+		std::cout << factorCount << " factors, time = " << runtime << ", " << ss.str() << std::endl;
+
 		if (_savedCount != factorCount)
 		{
-			const uint32_t N = uint32_t(1) << _n;
+			_factor.resize(factorCount);
+			engine.readFactors(_factor.data(), factorCount);
+		}
+	}
 
-			std::vector<cl_ulong2> factor(factorCount);
-			engine.readFactors(factor.data(), factorCount);
+private:
+	void printFactors()
+	{
+		const std::lock_guard<std::mutex> lock(_factor_mutex);
 
+		const size_t factorCount = _factor.size();
+		if (_savedCount != factorCount)
+		{
 			std::ofstream resFile(_outFilename, std::ios::app);
 			if (resFile.is_open())
 			{
+				const uint32_t N = uint32_t(1) << _n;
 				for (size_t i = _savedCount; i < factorCount; ++i)
 				{
-					const cl_ulong2 & f = factor[i];
+					const cl_ulong2 & f = _factor[i];
 					const uint32_t b = uint32_t(f.s[1] >> 32);
 					char str[32]; uint96_get_str(f.s[0], uint32_t(f.s[1]), str);
 					std::ostringstream ss; ss << str << " | " << b << "^" << N << "+1" << std::endl;
 					resFile << ss.str();
-					std::cout << ss.str();
+					if (_display) std::cout << ss.str();
 				}
 				resFile.close();
 				_savedCount = factorCount;
 			}
 		}
+	}
 
-		std::ostringstream ss; ss << std::setprecision(3) << 86400 / (elapsedTime * percentDone) << " P/day";
-		const std::string runtime = timer::formatTime(elapsedTime);
-		std::cout << factorCount << " factors, time = " << runtime << ", " << ss.str() << std::endl;
+private:
+	void saveFactors(engine & engine, const double percentDone, const bool wait)
+	{
+		readFactors(engine, percentDone);
+
+		if (wait)
+		{
+			printFactors();
+		}
+		else
+		{
+			std::thread t(&printFactors, this);
+			t.detach();
+		}
 	}
 
 private:
@@ -218,9 +248,10 @@ private:
 	}
 
 public:
-	bool check(engine & engine, const uint32_t n, const uint32_t p_min, const uint32_t p_max)
+	bool check(engine & engine, const uint32_t n, const uint32_t p_min, const uint32_t p_max, const bool display)
 	{
 		_64bit = (p_max + 1 <= 9223);	// 2^63 / 10^15
+		_display = display;
 		_n = n;
 		_factorsLoop = size_t(1) << std::min(_n - 1, 10u);
 		_savedCount = 0;
@@ -276,14 +307,14 @@ public:
 			if (timer::diffTime(currentTime, recordTime) > 300)
 			{
 				recordTime = currentTime;
-				saveFactors(engine, total / cnt);
+				saveFactors(engine, total / cnt, false);
 			}
 		}
 
 		if (cnt > 0)
 		{
 			std::cout << " terminating...         \r";
-			saveFactors(engine, total / cnt);
+			saveFactors(engine, total / cnt, true);
 		}
 
 		// engine.displayProfiles(1);
