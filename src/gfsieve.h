@@ -45,7 +45,7 @@ protected:
 	size_t _factorsLoop = 0;
 	size_t _savedCount = 0;
 	timer::time _startTime;
-	std::string _outFilename;
+	std::string _extension;
 	std::mutex _factor_mutex;
 	std::vector<cl_ulong2> _factor;
 
@@ -123,6 +123,13 @@ private:
 	}
 
 private:
+	static void uint96_mul_2exp(uint64_t & x_l, uint32_t & x_h, const int s)
+	{
+		x_h = (x_h << s) | (uint32_t)(x_l >> (64 - s));
+		x_l <<= s;
+	}
+
+private:
 	static void uint96_get_str(const uint64_t x_l, const uint32_t x_h, char * const str)
 	{
 		char dgt[32];
@@ -161,14 +168,15 @@ private:
 	}
 
 private:
-	void printFactors()
+	void printFactors(const uint64_t cnt)
 	{
 		const std::lock_guard<std::mutex> lock(_factor_mutex);
 
 		const size_t factorCount = _factor.size();
 		if (_savedCount != factorCount)
 		{
-			std::ofstream resFile(_outFilename, std::ios::app);
+			const std::string resFilename = std::string("gf") + _extension;
+			std::ofstream resFile(resFilename, std::ios::app);
 			if (resFile.is_open())
 			{
 				const uint32_t N = uint32_t(1) << _n;
@@ -183,22 +191,30 @@ private:
 				}
 				resFile.close();
 				_savedCount = factorCount;
+
+				const std::string ctxFilename = std::string("ctx") + _extension;
+				std::ofstream ctxFile(ctxFilename);
+				if (ctxFile.is_open())
+				{
+					ctxFile << cnt << std::endl;
+					ctxFile.close();
+				}
 			}
 		}
 	}
 
 private:
-	void saveFactors(engine & engine, const double percentDone, const bool wait)
+	void saveFactors(engine & engine, const uint64_t cnt, const double percentDone, const bool wait)
 	{
 		readFactors(engine, percentDone);
 
 		if (wait)
 		{
-			printFactors();
+			printFactors(cnt);
 		}
 		else
 		{
-			std::thread t(&printFactors, this);
+			std::thread t(&printFactors, this, cnt);
 			t.detach();
 		}
 	}
@@ -255,8 +271,8 @@ public:
 		_n = n;
 		_factorsLoop = size_t(1) << std::min(_n - 1, 10u);
 		_savedCount = 0;
-		std::stringstream ss; ss << "gf" << n << "_" << p_min << "_" << p_max << ".txt";
-		_outFilename = ss.str();
+		std::stringstream ss; ss << n << "_" << p_min << "_" << p_max << ".txt";
+		_extension = ss.str();
 
 		std::cout << (_64bit ? "64" : "96") << "-bit mode" << std::endl;
 
@@ -274,14 +290,36 @@ public:
 		const double f = 1e15 / pow(2.0, double(n + 1 + log2GlobalWorkSize));
 		const uint64_t i_min = uint64_t(floor(p_min * f)), i_max = uint64_t(ceil(p_max * f));
 
+		const size_t N_2_factors_loop = (size_t(1) << (_n - 1)) / _factorsLoop;
+		const double total = double(i_max - i_min) / (p_max - p_min);
+
+		uint64_t cnt = 0;
+		const std::string ctxFilename = std::string("ctx") + _extension;
+		std::ifstream ctxFile(ctxFilename);
+		if (ctxFile.is_open())
+		{
+			ctxFile >> cnt;
+			ctxFile.close();
+		}
+
+		uint64_t p_min_l = i_min + cnt; uint32_t p_min_h = 0;
+		uint96_mul_2exp(p_min_l, p_min_h, log2GlobalWorkSize + _n + 1);
+		p_min_l |= 1;
+
+		uint64_t p_max_l = i_max; uint32_t p_max_h = 0;
+		uint96_mul_2exp(p_max_l, p_max_h, log2GlobalWorkSize);
+		const uint32_t c = (p_max_l == 0) ? 1 : 0; p_max_l -= 1; p_max_h -= c;
+		uint96_mul_2exp(p_max_l, p_max_h, _n + 1);
+		p_max_l |= 1;
+
+		char p_min_str[32]; uint96_get_str(p_min_l, p_min_h, p_min_str);
+		char p_max_str[32]; uint96_get_str(p_max_l, p_max_h, p_max_str);
+		std::cout << ((cnt != 0) ? "Resuming from a checkpoint, t" : "T") << "esting n = " << _n << " from " << p_min_str << " to " << p_max_str << std::endl;
+
 		_startTime = timer::currentTime();
 		timer::time displayTime = _startTime, recordTime = _startTime;
 
-		const size_t N_2_factors_loop = (size_t(1) << (_n - 1)) / _factorsLoop;
-
-		const double total = double(i_max - i_min) / (p_max - p_min);
-		uint64_t cnt = 0;
-		for (uint64_t i = i_min; i < i_max; ++i)
+		for (uint64_t i = i_min + cnt; i < i_max; ++i)
 		{
 			if (_quit) break;
 
@@ -307,14 +345,14 @@ public:
 			if (timer::diffTime(currentTime, recordTime) > 300)
 			{
 				recordTime = currentTime;
-				saveFactors(engine, total / cnt, false);
+				saveFactors(engine, cnt, total / cnt, false);
 			}
 		}
 
 		if (cnt > 0)
 		{
 			std::cout << " terminating...         \r";
-			saveFactors(engine, total / cnt, true);
+			saveFactors(engine, cnt, total / cnt, true);
 		}
 
 		// engine.displayProfiles(1);
