@@ -38,9 +38,9 @@ public:
 
 protected:
 	volatile bool _quit = false;
-	const size_t _factorSize = size_t(1) << 24;
 	bool _64bit = false;
 	bool _display = false;
+	size_t _factorSize = 0;
 	uint32_t _n = 0;
 	size_t _factorsLoop = 0;
 	size_t _savedCount = 0;
@@ -268,6 +268,7 @@ public:
 	{
 		_64bit = (p_max + 1 <= 9223);	// 2^63 / 10^15
 		_display = display;
+		_factorSize = (p_min >= 8) ? (size_t(1) << 24) : (size_t(1) << 26);
 		_n = n;
 		_factorsLoop = size_t(1) << std::min(_n - 1, 10u);
 		_savedCount = 0;
