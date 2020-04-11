@@ -416,6 +416,11 @@ static const char * const src_ocl_sieve = \
 "		q_p.s0 = (x2_0 >> p_shift) | (x2_1 << (64 - p_shift));\n" \
 "		q_p.s1 = (uint32)(x2_1 >> p_shift) | (uint32)(x2_2 << (64 - p_shift));\n" \
 "	}\n" \
+"	else if (p_shift == 64)\n" \
+"	{\n" \
+"		q_p.s0 = x2_1;\n" \
+"		q_p.s1 = (uint32)(x2_2);\n" \
+"	}\n" \
 "	else\n" \
 "	{\n" \
 "		const int s = p_shift - 64;\n" \
