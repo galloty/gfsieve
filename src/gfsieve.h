@@ -10,6 +10,7 @@ Please give feedback to the authors if improvement is realized. It is distribute
 #include "ocl.h"
 #include "timer.h"
 #include "engine.h"
+#include "uint96.h"
 
 #include <thread>
 #include <mutex>
@@ -123,36 +124,12 @@ private:
 	}
 
 private:
-	static void uint96_mul_2exp(uint64_t & x_l, uint32_t & x_h, const int s)
-	{
-		x_h = (x_h << s) | (uint32_t)(x_l >> (64 - s));
-		x_l <<= s;
-	}
-
-private:
-	static void uint96_get_str(const uint64_t x_l, const uint32_t x_h, char * const str)
-	{
-		char dgt[32];
-		uint64_t l = x_l & ((uint64_t(1) << 48) - 1), h = (uint64_t(x_h) << 16) | (x_l >> 48);
-		size_t n = 32;
-		while ((l != 0) || (h != 0))
-		{
-			l |= (h % 10) << 48;
-			h /= 10;
-			--n; dgt[n] = '0' + char(l % 10);
-			l /= 10;
-		}
-		for (size_t i = n; i < 32; ++i) str[i - n] = dgt[i];
-		str[32 - n] = '\0';
-	}
-
-private:
 	void readFactors(engine & engine, const double percentDone)
 	{
 		const size_t factorCount = engine.readFactorCount();
 		const double elapsedTime = timer::diffTime(timer::currentTime(), _startTime);
 
-		if (factorCount >= _factorSize) throw std::runtime_error("Internal error detected");
+		if (factorCount >= _factorSize) throw std::runtime_error("factor count is too large");
 
 		const std::lock_guard<std::mutex> lock(_factor_mutex);
 
@@ -179,15 +156,47 @@ private:
 			std::ofstream resFile(resFilename, std::ios::app);
 			if (resFile.is_open())
 			{
-				const uint32_t N = uint32_t(1) << _n;
+				const uint32_t n = _n, N = uint32_t(1) << n;
 				for (size_t i = _savedCount; i < factorCount; ++i)
 				{
 					const cl_ulong2 & f = _factor[i];
 					const uint32_t b = uint32_t(f.s[1] >> 32);
-					char str[32]; uint96_get_str(f.s[0], uint32_t(f.s[1]), str);
-					std::ostringstream ss; ss << str << " | " << b << "^" << N << "+1" << std::endl;
-					resFile << ss.str();
-					if (_display) std::cout << ss.str();
+					const uint96 p = uint96(uint32_t(f.s[0]), uint32_t(f.s[0] >> 32), uint32_t(f.s[1]));
+					char str[32]; p.get_str(str);
+
+					uint96 r = uint96(b);
+					for (size_t j = 0; j < n; ++j) r.square_mod(p);
+					r |= 1;
+					if (r == p)
+					{
+						std::ostringstream ss; ss << str << " | " << b << "^" << N << "+1" << std::endl;
+						resFile << ss.str();
+						if (_display) std::cout << ss.str();
+					}
+					else
+					{
+						const uint96 r2 = uint96::pow_mod(2, p, p);
+						if (r2 != uint96(2))
+						{
+							std::ostringstream ss; ss << str << " is not 2-prp";
+							throw std::runtime_error(ss.str());
+						}
+						bool isPrime = true;
+						for (uint32_t a = 3; a < 1000; a += 2)
+						{
+							const uint96 ra = uint96::pow_mod(a, p, p);
+							if (ra != uint96(a))
+							{
+								isPrime = false;
+								break;
+							}
+						}
+						if (isPrime)
+						{
+							std::ostringstream ss; ss << str << " doesn't divide " << b << "^" << N << "+1";
+							throw std::runtime_error(ss.str());
+						}
+					}
 				}
 				resFile.close();
 				_savedCount = factorCount;
@@ -303,18 +312,19 @@ public:
 			ctxFile.close();
 		}
 
-		uint64_t p_min_l = i_min + cnt; uint32_t p_min_h = 0;
-		uint96_mul_2exp(p_min_l, p_min_h, log2GlobalWorkSize + _n + 1);
-		p_min_l |= 1;
+		const uint64_t i = i_min + cnt;
+		uint96 p_min96 = uint96(uint32_t(i), uint32_t(i >> 32));
+		p_min96 <<= log2GlobalWorkSize + _n + 1;
+		p_min96 |= 1;
 
-		uint64_t p_max_l = i_max; uint32_t p_max_h = 0;
-		uint96_mul_2exp(p_max_l, p_max_h, log2GlobalWorkSize);
-		const uint32_t c = (p_max_l == 0) ? 1 : 0; p_max_l -= 1; p_max_h -= c;
-		uint96_mul_2exp(p_max_l, p_max_h, _n + 1);
-		p_max_l |= 1;
+		uint96 p_max96 = uint96(uint32_t(i_max), uint32_t(i_max >> 32));
+		p_max96 <<= log2GlobalWorkSize;
+		p_max96 -= 1;
+		p_max96 <<= _n + 1;
+		p_max96 |= 1;
 
-		char p_min_str[32]; uint96_get_str(p_min_l, p_min_h, p_min_str);
-		char p_max_str[32]; uint96_get_str(p_max_l, p_max_h, p_max_str);
+		char p_min_str[32], p_max_str[32];
+		p_min96.get_str(p_min_str); p_max96.get_str(p_max_str);
 		std::cout << ((cnt != 0) ? "Resuming from a checkpoint, t" : "T") << "esting n = " << _n << " from " << p_min_str << " to " << p_max_str << std::endl;
 
 		_startTime = timer::currentTime();

@@ -87,7 +87,7 @@ private:
 #endif
 
 		std::ostringstream ss;
-		ss << "gfsieve 0.6.1 " << sysver << ssc.str() << std::endl;
+		ss << "gfsieve 0.7.0 " << sysver << ssc.str() << std::endl;
 		ss << "Copyright (c) 2020, Yves Gallot" << std::endl;
 		ss << "gfsieve is free source code, under the MIT license." << std::endl;
 		if (nl) ss << std::endl;
@@ -132,9 +132,9 @@ public:
 		if (args.size() < 3) return;
 
 		// parse args
-		const uint32_t n = (args.size() > 0) ? std::atoi(args[0].c_str()) : 21;
-		const uint32_t p_min = (args.size() > 1) ? std::atoi(args[1].c_str()) : 100000;
-		const uint32_t p_max = (args.size() > 2) ? std::atoi(args[2].c_str()) : 100001;
+		const uint32_t n = (args.size() > 0) ? std::atoi(args[0].c_str()) : 13;	//21;
+		const uint32_t p_min = (args.size() > 1) ? std::atoi(args[1].c_str()) : 1105;	//100000;
+		const uint32_t p_max = (args.size() > 2) ? std::atoi(args[2].c_str()) : 1106;	//100001;
 		size_t d = 0;
 		bool display = false;
 		for (size_t i = 3, size = args.size(); i < size; ++i)

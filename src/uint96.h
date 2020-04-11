@@ -74,16 +74,24 @@ private:
 			return *this;
 		}
 
-		void setSquare(const uint96 & n)
+		void square96()
 		{
-			const uint64_t a00 = n._a[0] * uint64_t(n._a[0]), a01 = n._a[0] * uint64_t(n._a[1]), a02 = n._a[0] * uint64_t(n._a[2]);
-			const uint64_t a11 = n._a[1] * uint64_t(n._a[1]), a12 = n._a[1] * uint64_t(n._a[2]), a22 = n._a[2] * uint64_t(n._a[2]);
+			const uint64_t a00 = _a[0] * uint64_t(_a[0]), a01 = _a[0] * uint64_t(_a[1]), a02 = _a[0] * uint64_t(_a[2]);
+			const uint64_t a11 = _a[1] * uint64_t(_a[1]), a12 = _a[1] * uint64_t(_a[2]), a22 = _a[2] * uint64_t(_a[2]);
 			const uint64_t s1 = hi(a00) + 2 * lo(a01);
 			const uint64_t s2 = lo(a11) + 2 * (hi(a01) + lo(a02)) + hi(s1);
 			const uint64_t s3 = hi(a11) + 2 * (hi(a02) + lo(a12)) + hi(s2);
 			const uint64_t s4 = a22 + 2 * hi(a12) + hi(s3);
 			_a[0] = lo32(a00); _a[1] = lo32(s1); _a[2] = lo32(s2);
 			_a[3] = lo32(s3); _a[4] = lo32(s4); _a[5] = hi32(s4);
+		}
+
+		void mul96(const uint32_t n)
+		{
+			const uint64_t a00 = _a[0] * uint64_t(n), a01 = _a[1] * uint64_t(n), a02 = _a[2] * uint64_t(n);
+			const uint64_t s1 = hi(a00) + lo(a01);
+			const uint64_t s2 = a02 + hi(a01) + hi(s1);
+			_a[0] = lo32(a00); _a[1] = lo32(s1); _a[2] = lo32(s2); _a[3] = hi32(s2);
 		}
 
 		void rem(const uint96 & m)
@@ -116,6 +124,15 @@ public:
 		return true;
 	}
 
+	bool operator !=(const uint96 & rhs) const { return !(*this == rhs); }
+
+	bool bit(const int s) const
+	{
+		if (s < 32) return ((_a[0] & (uint32_t(1) << s)) != 0);
+		if (s < 64) return ((_a[1] & (uint32_t(1) << (s - 32))) != 0);
+		return ((_a[2] & (uint32_t(1) << (s - 64))) != 0);
+	}
+
 	uint96 & operator |=(const uint32_t n) { _a[0] |= n; return *this; }
 
 	uint96 & operator -=(const uint32_t n)
@@ -138,6 +155,12 @@ public:
 			_a[1] = (_a[1] << s) | (_a[0] >> (32 - s));
 			_a[0] <<= s;
 		}
+		else if (s == 32)
+		{
+			_a[2] = _a[1];
+			_a[1] = _a[0];
+			_a[0] = 0;
+		}
 		else
 		{
 			_a[2] = (_a[1] << (s - 32)) | (_a[0] >> (64 - s));
@@ -149,9 +172,18 @@ public:
 
 	void square_mod(const uint96 & m)
 	{
-		uint192 s; s.setSquare(*this);
-		s.rem(m);
-		*this = uint96(s);
+		uint192 l = uint192(*this);
+		l.square96();
+		l.rem(m);
+		*this = uint96(l);
+	}
+
+	void mul_mod(const uint32_t n, const uint96 & m)
+	{
+		uint192 l = uint192(*this);
+		l.mul96(n);
+		l.rem(m);
+		*this = uint96(l);
 	}
 
 	void get_str(char * const str) const
@@ -173,5 +205,22 @@ public:
 		}
 		for (size_t i = n; i < 32; ++i) str[i - n] = dgt[i];
 		str[32 - n] = '\0';
+	}
+
+	static uint96 pow_mod(const uint32_t a, const uint96 & e, const uint96 & m)
+	{
+		bool s = false;
+		uint96 r = uint96(a);
+		for (int b = 95; b >= 0; --b)
+		{
+			if (s) r.square_mod(m);
+
+			if (e.bit(b))
+			{
+				if (s) r.mul_mod(a, m);
+				s = true;
+			}
+		}
+		return r;
 	}
 };

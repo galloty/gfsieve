@@ -408,6 +408,11 @@ inline uint96 uint96_square_mod(const uint96 x, const uint96 p, const uint96 p_i
 		q_p.s0 = (x2_0 >> p_shift) | (x2_1 << (64 - p_shift));
 		q_p.s1 = (uint32)(x2_1 >> p_shift) | (uint32)(x2_2 << (64 - p_shift));
 	}
+	else if (p_shift == 64)
+	{
+		q_p.s0 = x2_1;
+		q_p.s1 = (uint32)(x2_2);
+	}
 	else
 	{
 		const int s = p_shift - 64;
