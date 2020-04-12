@@ -223,7 +223,7 @@ private:
 		}
 		else
 		{
-			std::thread t(&printFactors, this, cnt);
+			std::thread t( [=] { printFactors(cnt); } );
 			t.detach();
 		}
 	}

@@ -19,7 +19,7 @@ clean:
 	$(RM) $(EXEC)
 
 $(EXEC): clean $(OBJS)
-	$(CC) $(OBJS) $(CLFLAGS) $(OCL_LIB) -static-libstdc++ -static-libgcc -o $@
+	$(CC) $(OBJS) $(CLFLAGS) $(OCL_LIB) -lpthread -static-libstdc++ -static-libgcc -o $@
 	$(RM) $(OBJS)
 
 .cpp.o:
