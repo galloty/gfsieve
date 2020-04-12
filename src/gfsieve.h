@@ -45,6 +45,8 @@ protected:
 	uint32_t _n = 0;
 	size_t _factorsLoop = 0;
 	size_t _savedCount = 0;
+	int _log2GlobalWorkSize = 18;
+	size_t _localWorkSize = 0;
 	timer::time _startTime;
 	std::string _extension;
 	std::mutex _factor_mutex;
@@ -89,12 +91,12 @@ private:
 	}
 
 private:
-	void initEngine(engine & engine, const int log2GlobalWorkSize) const
+	void initEngine(engine & engine, const int log2Global) const
 	{
-		const size_t globalWorkSize = size_t(1) << log2GlobalWorkSize;
+		const size_t globalWorkSize = size_t(1) << log2Global;
 
 		std::stringstream src;
-		src << "#define\tlog2GlobalWorkSize\t" << log2GlobalWorkSize << std::endl;
+		src << "#define\tlog2GlobalWorkSize\t" << log2Global << std::endl;
 		src << "#define\tgfn_n\t" << _n << std::endl;
 		src << "#define\tfactors_loop\t" << _factorsLoop << std::endl;
 		src << std::endl;
@@ -205,7 +207,7 @@ private:
 				std::ofstream ctxFile(ctxFilename);
 				if (ctxFile.is_open())
 				{
-					ctxFile << cnt << std::endl;
+					ctxFile << cnt << " " << _log2GlobalWorkSize << " " << _localWorkSize << std::endl;
 					ctxFile.close();
 				}
 			}
@@ -229,7 +231,7 @@ private:
 	}
 
 private:
-	void autoTuning(engine & engine, const uint32_t p_min, int & log2GlobalWorkSize, size_t & localWorkSize)
+	void autoTuning(engine & engine, const uint32_t p_min)
 	{
 		std::cout << " auto-tuning...\r";
 
@@ -261,8 +263,8 @@ private:
 				if (time < bestTime)
 				{
 					bestTime = time;
-					log2GlobalWorkSize = log2Global;
-					localWorkSize = (local == 8) ? 0 : local;
+					_log2GlobalWorkSize = log2Global;
+					_localWorkSize = (local == 8) ? 0 : local;
 				}
 
 				engine.resetProfiles();
@@ -286,39 +288,39 @@ public:
 
 		std::cout << (_64bit ? "64" : "96") << "-bit mode" << std::endl;
 
-		int log2GlobalWorkSize = 18;
-		size_t localWorkSize = 0;
-		autoTuning(engine, p_min, log2GlobalWorkSize, localWorkSize);
-
-		const size_t globalWorkSize = size_t(1) << log2GlobalWorkSize;
-
-		std::cout << "globalWorkSize = " << globalWorkSize << ", localWorkSize = " << localWorkSize << std::endl;
-
-		engine.setProfiling(false);
-		initEngine(engine, log2GlobalWorkSize);
-
-		const double f = 1e15 / pow(2.0, double(n + 1 + log2GlobalWorkSize));
-		const uint64_t i_min = uint64_t(floor(p_min * f)), i_max = uint64_t(ceil(p_max * f));
-
-		const size_t N_2_factors_loop = (size_t(1) << (_n - 1)) / _factorsLoop;
-		const double total = double(i_max - i_min) / (p_max - p_min);
-
 		uint64_t cnt = 0;
 		const std::string ctxFilename = std::string("ctx") + _extension;
 		std::ifstream ctxFile(ctxFilename);
 		if (ctxFile.is_open())
 		{
 			ctxFile >> cnt;
+			ctxFile >> _log2GlobalWorkSize;
+			ctxFile >> _localWorkSize;
 			ctxFile.close();
 		}
 
+		if (cnt == 0)
+		{
+			autoTuning(engine, p_min);
+			std::cout << "globalWorkSize = " << (size_t(1) << _log2GlobalWorkSize) << ", localWorkSize = " << _localWorkSize << std::endl;
+		}
+
+		engine.setProfiling(false);
+		initEngine(engine, _log2GlobalWorkSize);
+
+		const double f = 1e15 / pow(2.0, double(n + 1 + _log2GlobalWorkSize));
+		const uint64_t i_min = uint64_t(floor(p_min * f)), i_max = uint64_t(ceil(p_max * f));
+
+		const size_t N_2_factors_loop = (size_t(1) << (_n - 1)) / _factorsLoop;
+		const double total = double(i_max - i_min) / (p_max - p_min);
+
 		const uint64_t i = i_min + cnt;
 		uint96 p_min96 = uint96(uint32_t(i), uint32_t(i >> 32));
-		p_min96 <<= log2GlobalWorkSize + _n + 1;
+		p_min96 <<= _log2GlobalWorkSize + _n + 1;
 		p_min96 |= 1;
 
 		uint96 p_max96 = uint96(uint32_t(i_max), uint32_t(i_max >> 32));
-		p_max96 <<= log2GlobalWorkSize;
+		p_max96 <<= _log2GlobalWorkSize;
 		p_max96 -= 1;
 		p_max96 <<= _n + 1;
 		p_max96 |= 1;
@@ -330,6 +332,8 @@ public:
 		_startTime = timer::currentTime();
 		timer::time displayTime = _startTime, recordTime = _startTime;
 
+		const size_t globalWorkSize = size_t(1) << _log2GlobalWorkSize, localWorkSize = _localWorkSize;
+
 		for (uint64_t i = i_min + cnt; i < i_max; ++i)
 		{
 			if (_quit) break;
@@ -338,7 +342,7 @@ public:
 			// const size_t primeCount = engine.readPrimeCount();
 			// std::cout << primeCount << " primes" << std::endl;
 			engine.initFactors(globalWorkSize);
-			engine.checkFactors(globalWorkSize, N_2_factors_loop, 0);
+			engine.checkFactors(globalWorkSize, N_2_factors_loop, localWorkSize);
 			// const size_t factorCount = engine.readFactorCount();
 			// std::cout << factorCount << " factors" << std::endl;
 			engine.clearPrimes();
