@@ -126,7 +126,7 @@ private:
 	}
 
 private:
-	void readFactors(engine & engine, const double percentDone)
+	void readFactors(engine & engine)
 	{
 		const size_t factorCount = engine.readFactorCount();
 		const double elapsedTime = timer::diffTime(timer::currentTime(), _startTime);
@@ -135,9 +135,8 @@ private:
 
 		const std::lock_guard<std::mutex> lock(_factor_mutex);
 
-		std::ostringstream ss; ss << std::setprecision(3) << 86400 / (elapsedTime * percentDone) << " P/day";
 		const std::string runtime = timer::formatTime(elapsedTime);
-		std::cout << factorCount << " factors, time = " << runtime << ", " << ss.str() << std::endl;
+		std::cout << factorCount << " factors, time = " << runtime << std::endl;
 
 		if (_savedCount != factorCount)
 		{
@@ -215,9 +214,9 @@ private:
 	}
 
 private:
-	void saveFactors(engine & engine, const uint64_t cnt, const double percentDone, const bool wait)
+	void saveFactors(engine & engine, const uint64_t cnt, const bool wait)
 	{
-		readFactors(engine, percentDone);
+		readFactors(engine);
 
 		if (wait)
 		{
@@ -231,7 +230,7 @@ private:
 	}
 
 private:
-	void autoTuning(engine & engine, const uint32_t p_min)
+	double autoTuning(engine & engine, const uint32_t p_min)
 	{
 		std::cout << " auto-tuning...\r";
 
@@ -251,7 +250,7 @@ private:
 
 			for (size_t local = 8; local <= maxWorkGroupSize; local *= 2)
 			{
-				if (_quit) return;
+				if (_quit) return 0;
 
 				engine.checkPrimes(global, i);
 				engine.initFactors(global);
@@ -272,6 +271,12 @@ private:
 
 			clearEngine(engine);
 		}
+
+		const double pTime = bestTime / 1e9 * 1e15 / pow(2.0, double(_n + 1));
+		std::ostringstream ss; ss << std::setprecision(3) << 86400 / pTime << " P/day (globalWorkSize = "
+			<< (size_t(1) << _log2GlobalWorkSize) << ", localWorkSize = " << _localWorkSize << ")";
+		std::cout << ss.str() << std::endl;
+		return pTime;
 	}
 
 public:
@@ -301,8 +306,9 @@ public:
 
 		if (cnt == 0)
 		{
-			autoTuning(engine, p_min);
-			std::cout << "globalWorkSize = " << (size_t(1) << _log2GlobalWorkSize) << ", localWorkSize = " << _localWorkSize << std::endl;
+			const double pTime = autoTuning(engine, p_min);
+			const std::string estimatedTime = timer::formatTime(pTime * (p_max - p_min));
+			std::cout << "Estimated time: " << estimatedTime << std::endl;
 		}
 
 		engine.setProfiling(false);
@@ -312,7 +318,6 @@ public:
 		const uint64_t i_min = uint64_t(floor(p_min * f)), i_max = uint64_t(ceil(p_max * f));
 
 		const size_t N_2_factors_loop = (size_t(1) << (_n - 1)) / _factorsLoop;
-		const double total = double(i_max - i_min) / (p_max - p_min);
 
 		const uint64_t i = i_min + cnt;
 		uint96 p_min96 = uint96(uint32_t(i), uint32_t(i >> 32));
@@ -360,14 +365,14 @@ public:
 			if (timer::diffTime(currentTime, recordTime) > 300)
 			{
 				recordTime = currentTime;
-				saveFactors(engine, cnt, total / cnt, false);
+				saveFactors(engine, cnt, false);
 			}
 		}
 
 		if (cnt > 0)
 		{
 			std::cout << " terminating...         \r";
-			saveFactors(engine, cnt, total / cnt, true);
+			saveFactors(engine, cnt, true);
 		}
 
 		// engine.displayProfiles(1);
