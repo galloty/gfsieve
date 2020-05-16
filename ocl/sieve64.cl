@@ -339,8 +339,8 @@ inline uint64 uint64_mul_mod(const uint64 x, const uint64 w, const uint64 p, con
 inline uint64 uint64_two_powm(const uint64 e, const uint64 p, const uint96 p_inv, const int p_shift)
 {
 	// x = 2^e mod p, left-to-right algorithm
-	uint64 r = 1;
-	for (int b = uint64_log2(e); b >= 0; --b)
+	uint64 r = 2;
+	for (int b = uint64_log2(e) - 1; b >= 0; --b)
 	{
 		r = uint64_square_mod(r, p, p_inv, p_shift);
 		if ((e & ((uint64)(1) << b)) != 0) r = uint64_dup_mod(r, p);
@@ -351,8 +351,8 @@ inline uint64 uint64_two_powm(const uint64 e, const uint64 p, const uint96 p_inv
 inline uint64 uint64_powm(const uint64 a, const uint64 e, const uint64 p, const uint96 p_inv, const int p_shift, const uint64 a_inv)
 {
 	// x = a^e mod p, left-to-right algorithm
-	uint64 r = 1;
-	for (int b = uint64_log2(e); b >= 0; --b)
+	uint64 r = a;
+	for (int b = uint64_log2(e) - 1; b >= 0; --b)
 	{
 		r = uint64_square_mod(r, p, p_inv, p_shift);
 		if ((e & ((uint64)(1) << b)) != 0) r = uint64_mul_mod(r, a, p, a_inv);

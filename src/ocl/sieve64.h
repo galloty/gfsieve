@@ -5,6 +5,10 @@ gfsieve is free source code, under the MIT license (see LICENSE). You can redist
 Please give feedback to the authors if improvement is realized. It is distributed in the hope that it will be useful.
 */
 
+#pragma once
+
+#include <cstdint>
+
 static const char * const src_ocl_sieve64 = \
 "/*\n" \
 "Copyright 2020, Yves Gallot\n" \
@@ -347,8 +351,8 @@ static const char * const src_ocl_sieve64 = \
 "inline uint64 uint64_two_powm(const uint64 e, const uint64 p, const uint96 p_inv, const int p_shift)\n" \
 "{\n" \
 "	// x = 2^e mod p, left-to-right algorithm\n" \
-"	uint64 r = 1;\n" \
-"	for (int b = uint64_log2(e); b >= 0; --b)\n" \
+"	uint64 r = 2;\n" \
+"	for (int b = uint64_log2(e) - 1; b >= 0; --b)\n" \
 "	{\n" \
 "		r = uint64_square_mod(r, p, p_inv, p_shift);\n" \
 "		if ((e & ((uint64)(1) << b)) != 0) r = uint64_dup_mod(r, p);\n" \
@@ -359,8 +363,8 @@ static const char * const src_ocl_sieve64 = \
 "inline uint64 uint64_powm(const uint64 a, const uint64 e, const uint64 p, const uint96 p_inv, const int p_shift, const uint64 a_inv)\n" \
 "{\n" \
 "	// x = a^e mod p, left-to-right algorithm\n" \
-"	uint64 r = 1;\n" \
-"	for (int b = uint64_log2(e); b >= 0; --b)\n" \
+"	uint64 r = a;\n" \
+"	for (int b = uint64_log2(e) - 1; b >= 0; --b)\n" \
 "	{\n" \
 "		r = uint64_square_mod(r, p, p_inv, p_shift);\n" \
 "		if ((e & ((uint64)(1) << b)) != 0) r = uint64_mul_mod(r, a, p, a_inv);\n" \

@@ -62,6 +62,18 @@ private:
 			return true;
 		}
 
+		uint192 & operator +=(const uint192 & rhs)
+		{
+			uint64_t l = 0;
+			for (size_t i = 0; i < 6; ++i)
+			{
+				l += uint64_t(_a[i]) + uint64_t(rhs._a[i]);
+				_a[i] = uint32_t(l);
+				l >>= 32;
+			}
+			return *this;
+		}
+
 		uint192 & operator -=(const uint192 & rhs)
 		{
 			int64_t l = 0;
@@ -111,10 +123,13 @@ private:
 				num.half();
 				--c;
 			}
+
+			if (*this >= num) { *this -= num; }
 		}
 	};
 
 public:
+	uint96() {}
 	uint96(const uint32_t a0, const uint32_t a1 = 0, const uint32_t a2 = 0) { _a[0] = a0; _a[1] = a1; _a[2] = a2; }
 	virtual ~uint96() {}
 
@@ -134,6 +149,17 @@ public:
 	}
 
 	uint96 & operator |=(const uint32_t n) { _a[0] |= n; return *this; }
+
+	uint96 & operator +=(const uint32_t n)
+	{
+		uint64_t l = _a[0] + uint64_t(n);
+		_a[0] = uint32_t(l);
+		l = _a[1] + (l >> 32);
+		_a[1] = uint32_t(l);
+		l = _a[2] + (l >> 32);
+		_a[2] = uint32_t(l);
+		return *this;
+	}
 
 	uint96 & operator -=(const uint32_t n)
 	{
