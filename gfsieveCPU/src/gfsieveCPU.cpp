@@ -123,7 +123,7 @@ static std::string header()
 #endif
 
 	std::ostringstream ss;
-	ss << "gfsieveCPU 0.2.0 " << sysver << ssc.str() << std::endl;
+	ss << "gfsieveCPU 0.3.0 " << sysver << ssc.str() << std::endl;
 	ss << "Copyright (c) 2020, Yves Gallot" << std::endl;
 	ss << "gfsieveCPU is free source code, under the MIT license." << std::endl << std::endl;
 	return ss.str();
@@ -153,8 +153,9 @@ int main(int argc, char * argv[])
 	const uint32_t b_min = (argc > 2) ? (std::atoi(argv[2]) / 2) * 2 : 100000800;
 	const uint32_t b_max = (argc > 3) ?(std::atoi(argv[3]) / 2) * 2 : 100000900;
 
-	std::stringstream ss; ss << "gfsieveCPU_" << n << "_" << b_min << "_" << b_max << ".res";
-	const std::string filename = ss.str();
+	std::stringstream ss; ss << "gfsieveCPU_" << n << "_" << b_min << "_" << b_max;
+	const std::string res_filename = ss.str() + ".res";
+	const std::string cand_filename = ss.str() + ".cand";
 
 	std::vector<bool> sieve((b_max - b_min) / 2 + 1, false);
 
@@ -193,7 +194,7 @@ int main(int argc, char * argv[])
 					{
 						const uint64_t rp = powm(b, 1 << n, p); if (r != rp) std::cerr << "Error" << std::endl;
 						sieve[i] = true;
-						std::ofstream resFile(filename, std::ios::app);
+						std::ofstream resFile(res_filename, std::ios::app);
 						if (!resFile.is_open()) return EXIT_FAILURE;
 						resFile << k << " * 2^" << n + 1 << " + 1 | " << b << "^" << (uint32_t(1) << n) << " + 1" << std::endl;
 						resFile.flush();
@@ -209,6 +210,10 @@ int main(int argc, char * argv[])
 	size_t count = 0;
 	for (bool b : sieve) if (b) count++;
 	std::cout << "Removed " << count << "/" << sieve.size() << " candidates." << std::endl;
+
+	std::ofstream candFile(cand_filename, std::ios::app);
+	for (uint32_t b = b_min, i = 0; b <= b_max; b += 2, ++i) if (!sieve[i]) candFile << b << std::endl;
+	candFile.close();
 
 	return EXIT_SUCCESS;
 }
