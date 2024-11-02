@@ -484,7 +484,8 @@ static const char * const src_ocl_sieve = \
 "}\n" \
 "\n" \
 "__kernel\n" \
-"void check_primes(__global uint * restrict const prime_count, __global ulong2 * restrict const prime_vector, const ulong i)\n" \
+"void generate_primes(__global uint * restrict const prime_count, __global ulong2 * restrict const p_vector,\n" \
+"	__global ulong2 * restrict const q_vector, __global ulong2 * restrict const one_vector, const ulong i)\n" \
 "{\n" \
 "	const uint96 k = uint96_set((i << log2GlobalWorkSize) | get_global_id(0), (uint32)(i >> (64 - log2GlobalWorkSize)));\n" \
 "\n" \
@@ -499,19 +500,20 @@ static const char * const src_ocl_sieve = \
 "	if (uint96_is_equal_ui(r, 1))\n" \
 "	{\n" \
 "		const uint prime_index = atomic_inc(prime_count);\n" \
-"		prime_vector[prime_index] = (ulong2)(p.s0, (ulong)(p.s1));\n" \
+"		p_vector[prime_index] = (ulong2)(p.s0, (ulong)(p.s1));\n" \
 "	}\n" \
 "}\n" \
 "\n" \
 "__kernel\n" \
-"void init_factors(__global const uint * restrict const prime_count, __global const ulong2 * restrict const prime_vector,\n" \
-"	__global ulong2 * restrict const a2k_vector, __global ulong2 * restrict const a2k_inv_vector,\n" \
-"	__global ulong2 * restrict const c_vector)\n" \
+"void init_factors(__global const uint * restrict const prime_count, __global const ulong2 * restrict const p_vector,\n" \
+"	__global /*const*/ ulong2 * restrict const q_vector, __global const ulong2 * restrict const one_vector,\n" \
+"	__global const char * restrict const _kro_vector,\n" \
+"	__global ulong2 * restrict const c_vector, __global ulong2 * restrict const a2k_vector)\n" \
 "{\n" \
 "	const size_t i = get_global_id(0);\n" \
 "	if (i >= *prime_count) return;\n" \
 "\n" \
-"	const ulong2 prm = prime_vector[i];\n" \
+"	const ulong2 prm = p_vector[i];\n" \
 "	const uint96 p = uint96_set(prm.s0, (uint32)(prm.s1));\n" \
 "\n" \
 "	const uint96 k = uint96_div_2exp(p, gfn_n + 1);\n" \
@@ -547,22 +549,23 @@ static const char * const src_ocl_sieve = \
 "	const uint96 a2k = uint96_square_mod(c, p, p_inv, p_shift);\n" \
 "	a2k_vector[i] = (ulong2)(a2k.s0, a2k.s1);\n" \
 "	const uint96 a2k_inv = uint96_shoup_inv(a2k, p, 96);\n" \
-"	a2k_inv_vector[i] = (ulong2)(a2k_inv.s0, a2k_inv.s1);\n" \
+"	q_vector[i] = (ulong2)(a2k_inv.s0, a2k_inv.s1);\n" \
 "}\n" \
 "\n" \
 "__kernel\n" \
-"void check_factors(__global const uint * restrict const prime_count, __global const ulong2 * restrict const prime_vector,\n" \
-"	__global const ulong2 * restrict const a2k_vector, __global const ulong2 * restrict const a2k_inv_vector,\n" \
-"	__global ulong2 * restrict const c_vector, __global uint * restrict const factor_count, __global ulong2 * restrict const factor)\n" \
+"void check_factors(__global const uint * restrict const prime_count,\n" \
+"	__global const ulong2 * restrict const p_vector, __global const ulong2 * restrict const q_vector,\n" \
+"	__global ulong2 * restrict const c_vector, __global const ulong2 * restrict const a2k_vector,\n" \
+"	__global uint * restrict const factor_count, __global ulong2 * restrict const factor)\n" \
 "{\n" \
 "	const size_t i = get_global_id(0);\n" \
 "	if (i >= *prime_count) return;\n" \
 "\n" \
-"	const ulong2 prm = prime_vector[i];\n" \
+"	const ulong2 prm = p_vector[i];\n" \
 "	const uint96 p = uint96_set(prm.s0, (uint32)(prm.s1));\n" \
 "	const ulong2 a2k_val = a2k_vector[i];\n" \
 "	const uint96 a2k = uint96_set(a2k_val.s0, (uint32)(a2k_val.s1));\n" \
-"	const ulong2 a2k_inv_val = a2k_inv_vector[i];\n" \
+"	const ulong2 a2k_inv_val = q_vector[i];\n" \
 "	const uint96 a2k_inv = uint96_set(a2k_inv_val.s0, (uint32)(a2k_inv_val.s1));\n" \
 "	const ulong2 c_val = c_vector[i];\n" \
 "	uint96 c = uint96_set(c_val.s0, (uint32)(c_val.s1));\n" \

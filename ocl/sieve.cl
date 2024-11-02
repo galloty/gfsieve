@@ -472,7 +472,8 @@ inline uint96 uint96_powm(const uint96 a, const uint96 e, const uint96 p, const 
 }
 
 __kernel
-void check_primes(__global uint * restrict const prime_count, __global ulong2 * restrict const prime_vector, const ulong i)
+void generate_primes(__global uint * restrict const prime_count, __global ulong2 * restrict const p_vector,
+	__global ulong2 * restrict const q_vector, __global ulong2 * restrict const one_vector, const ulong i)
 {
 	const uint96 k = uint96_set((i << log2GlobalWorkSize) | get_global_id(0), (uint32)(i >> (64 - log2GlobalWorkSize)));
 
@@ -487,19 +488,20 @@ void check_primes(__global uint * restrict const prime_count, __global ulong2 * 
 	if (uint96_is_equal_ui(r, 1))
 	{
 		const uint prime_index = atomic_inc(prime_count);
-		prime_vector[prime_index] = (ulong2)(p.s0, (ulong)(p.s1));
+		p_vector[prime_index] = (ulong2)(p.s0, (ulong)(p.s1));
 	}
 }
 
 __kernel
-void init_factors(__global const uint * restrict const prime_count, __global const ulong2 * restrict const prime_vector,
-	__global ulong2 * restrict const a2k_vector, __global ulong2 * restrict const a2k_inv_vector,
-	__global ulong2 * restrict const c_vector)
+void init_factors(__global const uint * restrict const prime_count, __global const ulong2 * restrict const p_vector,
+	__global /*const*/ ulong2 * restrict const q_vector, __global const ulong2 * restrict const one_vector,
+	__global const char * restrict const _kro_vector,
+	__global ulong2 * restrict const c_vector, __global ulong2 * restrict const a2k_vector)
 {
 	const size_t i = get_global_id(0);
 	if (i >= *prime_count) return;
 
-	const ulong2 prm = prime_vector[i];
+	const ulong2 prm = p_vector[i];
 	const uint96 p = uint96_set(prm.s0, (uint32)(prm.s1));
 
 	const uint96 k = uint96_div_2exp(p, gfn_n + 1);
@@ -535,22 +537,23 @@ void init_factors(__global const uint * restrict const prime_count, __global con
 	const uint96 a2k = uint96_square_mod(c, p, p_inv, p_shift);
 	a2k_vector[i] = (ulong2)(a2k.s0, a2k.s1);
 	const uint96 a2k_inv = uint96_shoup_inv(a2k, p, 96);
-	a2k_inv_vector[i] = (ulong2)(a2k_inv.s0, a2k_inv.s1);
+	q_vector[i] = (ulong2)(a2k_inv.s0, a2k_inv.s1);
 }
 
 __kernel
-void check_factors(__global const uint * restrict const prime_count, __global const ulong2 * restrict const prime_vector,
-	__global const ulong2 * restrict const a2k_vector, __global const ulong2 * restrict const a2k_inv_vector,
-	__global ulong2 * restrict const c_vector, __global uint * restrict const factor_count, __global ulong2 * restrict const factor)
+void check_factors(__global const uint * restrict const prime_count,
+	__global const ulong2 * restrict const p_vector, __global const ulong2 * restrict const q_vector,
+	__global ulong2 * restrict const c_vector, __global const ulong2 * restrict const a2k_vector,
+	__global uint * restrict const factor_count, __global ulong2 * restrict const factor)
 {
 	const size_t i = get_global_id(0);
 	if (i >= *prime_count) return;
 
-	const ulong2 prm = prime_vector[i];
+	const ulong2 prm = p_vector[i];
 	const uint96 p = uint96_set(prm.s0, (uint32)(prm.s1));
 	const ulong2 a2k_val = a2k_vector[i];
 	const uint96 a2k = uint96_set(a2k_val.s0, (uint32)(a2k_val.s1));
-	const ulong2 a2k_inv_val = a2k_inv_vector[i];
+	const ulong2 a2k_inv_val = q_vector[i];
 	const uint96 a2k_inv = uint96_set(a2k_inv_val.s0, (uint32)(a2k_inv_val.s1));
 	const ulong2 c_val = c_vector[i];
 	uint96 c = uint96_set(c_val.s0, (uint32)(c_val.s1));

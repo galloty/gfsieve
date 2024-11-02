@@ -10,11 +10,11 @@ Please give feedback to the authors if improvement is realized. It is distribute
 #include "ocl.h"
 #include "timer.h"
 #include "engine.h"
-#include "uint96.h"
 
 #include <thread>
-#include <mutex>
 #include <cmath>
+
+#include <gmp.h>
 
 #include "ocl/sieve.h"
 #include "ocl/sieve64.h"
@@ -43,21 +43,21 @@ protected:
 	bool _display = false;
 	size_t _factorSize = 0;
 	uint32_t _n = 0;
-	size_t _factorsLoop = 0;
+	static constexpr size_t _factorsLoop = size_t(1) << 10u;
 	size_t _savedCount = 0;
 	int _log2GlobalWorkSize = 18;
 	size_t _localWorkSize = 0;
 	timer::time _startTime;
 	std::string _extension;
-	std::mutex _factor_mutex;
 	std::vector<cl_ulong2> _factor;
+	static constexpr double _unit = 1e15;
 
 private:
 	static bool readOpenCL(const char * const clFileName, const char * const headerFileName, const char * const varName, std::stringstream & src)
 	{
 		std::ifstream clFile(clFileName);
 		if (!clFile.is_open()) return false;
-		
+
 		// if .cl file exists then generate header file
 		std::ofstream hFile(headerFileName, std::ios::binary);	// binary: don't convert line endings to `CRLF` 
 		if (!hFile.is_open()) throw std::runtime_error("cannot write openCL header file");
@@ -94,10 +94,8 @@ private:
 	}
 
 private:
-	void initEngine(engine & engine, const int log2Global) const
+	void initEngine(engine & eng, const int log2Global) const
 	{
-		const size_t globalWorkSize = size_t(1) << log2Global;
-
 		std::stringstream src;
 		src << "#define\tlog2GlobalWorkSize\t" << log2Global << std::endl;
 		src << "#define\tgfn_n\t" << _n << std::endl;
@@ -113,30 +111,41 @@ private:
 			if (!readOpenCL("ocl/sieve.cl", "src/ocl/sieve.h", "src_ocl_sieve", src)) src << src_ocl_sieve;
 		}
 
-		engine.loadProgram(src.str());
-		engine.allocMemory(globalWorkSize, _factorSize);
-		engine.createKernels();
+		eng.loadProgram(src.str());
+		eng.allocMemory(size_t(1) << log2Global, _factorSize);
+		eng.createKernels();
 
-		engine.clearCounters();
+		cl_char kro[128 * 256];
+		mpz_t zj; mpz_init(zj);
+		for (uint32_t j = 3; j < 256; j += 2)
+		{
+			mpz_set_ui(zj, j);
+			for (uint32_t i = 0; i < j; ++i)
+			{
+				kro[256 * ((j - 3) / 2) + i] = cl_char(mpz_ui_kronecker(i, zj));
+			}
+		}
+		mpz_clear(zj);
+		eng.writeKronecker(kro);
+
+		eng.clearCounters();
 	}
 
 private:
-	void clearEngine(engine & engine) const
+	void clearEngine(engine & eng) const
 	{
-		engine.releaseKernels();
-		engine.releaseMemory();
-		engine.clearProgram();
+		eng.releaseKernels();
+		eng.releaseMemory();
+		eng.clearProgram();
 	}
 
 private:
-	void readFactors(engine & engine)
+	void readFactors(engine & eng)
 	{
-		const size_t factorCount = engine.readFactorCount();
+		const size_t factorCount = eng.readFactorCount();
 		const double elapsedTime = timer::diffTime(timer::currentTime(), _startTime);
 
 		if (factorCount >= _factorSize) throw std::runtime_error("factor count is too large");
-
-		const std::lock_guard<std::mutex> lock(_factor_mutex);
 
 		const std::string runtime = timer::formatTime(elapsedTime);
 		std::cout << factorCount << " factors, time = " << runtime << std::endl;
@@ -144,14 +153,14 @@ private:
 		if (_savedCount != factorCount)
 		{
 			_factor.resize(factorCount);
-			engine.readFactors(_factor.data(), factorCount);
+			eng.readFactors(_factor.data(), factorCount);
 		}
 	}
 
 private:
 	void printFactors(const uint64_t cnt)
 	{
-		const std::lock_guard<std::mutex> lock(_factor_mutex);
+		mpz_t zp, zr, zt; mpz_inits(zp, zr, zt, nullptr);
 
 		const size_t factorCount = _factor.size();
 		if (_savedCount != factorCount)
@@ -165,13 +174,13 @@ private:
 				{
 					const cl_ulong2 & f = _factor[i];
 					const uint32_t b = uint32_t(f.s[1] >> 32);
-					const uint96 p = uint96(uint32_t(f.s[0]), uint32_t(f.s[0] >> 32), uint32_t(f.s[1]));
-					char str[32]; p.get_str(str);
+					mpz_set_ui(zp, uint32_t(f.s[1]));
+					mpz_mul_2exp(zp, zp, 32); mpz_add_ui(zp, zp, uint32_t(f.s[0] >> 32));
+					mpz_mul_2exp(zp, zp, 32); mpz_add_ui(zp, zp, uint32_t(f.s[0]));
+					char str[32]; mpz_get_str(str, 10, zp);
 
-					uint96 r = uint96(b);
-					for (size_t j = 0; j < n; ++j) r.square_mod(p);
-					r |= 1;
-					if (r == p)
+					mpz_set_ui(zr, b); mpz_powm_ui(zr, zr, N, zp); mpz_add_ui(zr, zr, 1);
+					if (mpz_cmp(zr, zp) == 0)
 					{
 						std::ostringstream ss; ss << str << " | " << b << "^" << N << "+1" << std::endl;
 						resFile << ss.str();
@@ -179,8 +188,8 @@ private:
 					}
 					else
 					{
-						const uint96 r2 = uint96::pow_mod(2, p, p);
-						if (r2 != uint96(2))
+						mpz_set_ui(zt, 2); mpz_powm(zt, zt, zp, zp);
+						if (mpz_cmp_ui(zt, 2) != 0)
 						{
 							std::ostringstream ss; ss << str << " is not 2-prp";
 							throw std::runtime_error(ss.str());
@@ -188,8 +197,8 @@ private:
 						bool isPrime = true;
 						for (uint32_t a = 3; a < 1000; a += 2)
 						{
-							const uint96 ra = uint96::pow_mod(a, p, p);
-							if (ra != uint96(a))
+							mpz_set_ui(zt, a); mpz_powm(zt, zt, zp, zp);
+							if (mpz_cmp_ui(zt, a) != 0)
 							{
 								isPrime = false;
 								break;
@@ -214,30 +223,23 @@ private:
 				}
 			}
 		}
+
+		mpz_clears(zp, zr, zt, nullptr);
 	}
 
 private:
-	void saveFactors(engine & engine, const uint64_t cnt, const bool wait)
+	void saveFactors(engine & eng, const uint64_t cnt)
 	{
-		readFactors(engine);
-
-		if (wait)
-		{
-			printFactors(cnt);
-		}
-		else
-		{
-			std::thread t( [=] { printFactors(cnt); } );
-			t.detach();
-		}
+		readFactors(eng);
+		printFactors(cnt);
 	}
 
 private:
-	double autoTuning(engine & engine, const uint32_t p_min)
+	double autoTuning(engine & eng, const uint32_t p_min)
 	{
 		std::cout << " auto-tuning...\r";
 
-		const size_t maxWorkGroupSize = engine.getMaxWorkGroupSize();
+		const size_t maxWorkGroupSize = eng.getMaxWorkGroupSize();
 		const size_t N_2_factors_loop = (size_t(1) << (_n - 1)) / _factorsLoop;
 
 		double bestTime = 1e100;
@@ -245,23 +247,23 @@ private:
 		{
 			const size_t global = size_t(1) << log2Global;
 
-			engine.setProfiling(true);
-			initEngine(engine, log2Global);
-			
-			const double f = 1e15 / pow(2.0, double(_n + 1 + log2Global));
+			eng.setProfiling(true);
+			initEngine(eng, log2Global);
+
+			const double f = _unit / pow(2.0, double(_n + 1 + log2Global));
 			const uint64_t i = uint64_t(floor(p_min * f));
 
 			for (size_t local = 8; local <= maxWorkGroupSize; local *= 2)
 			{
 				if (_quit) return 0;
 
-				engine.checkPrimes(global, i);
-				engine.initFactors(global);
-				engine.checkFactors(global, N_2_factors_loop, (local == 8) ? 0 : local);
-				engine.clearPrimes();
-				engine.readFactorCount();
+				eng.generatePrimes(global, i);
+				eng.initFactors(global);
+				eng.checkFactors(global, N_2_factors_loop, (local == 8) ? 0 : local);
+				eng.clearPrimes();
+				eng.readFactorCount();
 
-				const double time = engine.getProfileTime() / double(global);
+				const double time = eng.getProfileTime() / double(global);
 				if (time < bestTime)
 				{
 					bestTime = time;
@@ -269,27 +271,26 @@ private:
 					_localWorkSize = (local == 8) ? 0 : local;
 				}
 
-				engine.resetProfiles();
+				eng.resetProfiles();
 			}
 
-			clearEngine(engine);
+			clearEngine(eng);
 		}
 
-		const double pTime = bestTime / 1e9 * 1e15 / pow(2.0, double(_n + 1));
-		std::ostringstream ss; ss << std::setprecision(3) << 86400 / pTime << " P/day (globalWorkSize = "
+		const double pTime = bestTime / 1e9 * _unit / pow(2.0, double(_n + 1));
+		std::ostringstream ss; ss << std::max(int(86400 / pTime), 1) << " P/day (globalWorkSize = "
 			<< (size_t(1) << _log2GlobalWorkSize) << ", localWorkSize = " << _localWorkSize << ")";
 		std::cout << ss.str() << std::endl;
 		return pTime;
 	}
 
 public:
-	bool check(engine & engine, const uint32_t n, const uint32_t p_min, const uint32_t p_max, const bool display)
+	bool check(engine & eng, const uint32_t n, const uint32_t p_min, const uint32_t p_max, const bool display)
 	{
-		_64bit = (p_max + 1 <= 9223);	// 2^63 / 10^15
+		_64bit = (p_max + 1 <= size_t(-1) / _unit);
 		_display = display;
 		_factorSize = (p_min >= 8) ? (size_t(1) << 24) : (size_t(1) << 26);
 		_n = n;
-		_factorsLoop = size_t(1) << std::min(_n - 1, 10u);
 		_savedCount = 0;
 		std::stringstream ss; ss << n << "_" << p_min << "_" << p_max << ".txt";
 		_extension = ss.str();
@@ -309,33 +310,37 @@ public:
 
 		if (cnt == 0)
 		{
-			const double pTime = autoTuning(engine, p_min);
+			const double pTime = autoTuning(eng, p_min);
 			const std::string estimatedTime = timer::formatTime(pTime * (p_max - p_min));
 			std::cout << "Estimated time: " << estimatedTime << std::endl;
 		}
 
-		engine.setProfiling(false);
-		initEngine(engine, _log2GlobalWorkSize);
+		eng.setProfiling(false);
+		initEngine(eng, _log2GlobalWorkSize);
 
-		const double f = 1e15 / pow(2.0, double(n + 1 + _log2GlobalWorkSize));
+		const double f = _unit / pow(2.0, double(n + 1 + _log2GlobalWorkSize));
 		const uint64_t i_min = uint64_t(floor(p_min * f)), i_max = uint64_t(ceil(p_max * f));
 
 		const size_t N_2_factors_loop = (size_t(1) << (_n - 1)) / _factorsLoop;
 
+		mpz_t zp_min, zp_max; mpz_inits(zp_min, zp_max, nullptr);
+
 		const uint64_t i = i_min + cnt;
-		uint96 p_min96 = uint96(uint32_t(i), uint32_t(i >> 32));
-		p_min96 <<= _log2GlobalWorkSize + _n + 1;
-		p_min96 |= 1;
+		mpz_set_ui(zp_min, uint32_t(i >> 32)); mpz_mul_2exp(zp_min, zp_min, 32); mpz_add_ui(zp_min, zp_min, uint32_t(i));
+		mpz_mul_2exp(zp_min, zp_min, _log2GlobalWorkSize + _n + 1);
+		mpz_add_ui(zp_min, zp_min, 1);
 
-		uint96 p_max96 = uint96(uint32_t(i_max), uint32_t(i_max >> 32));
-		p_max96 <<= _log2GlobalWorkSize;
-		p_max96 -= 1;
-		p_max96 <<= _n + 1;
-		p_max96 |= 1;
+		mpz_set_ui(zp_max, uint32_t(i_max >> 32)); mpz_mul_2exp(zp_max, zp_max, 32); mpz_add_ui(zp_max, zp_max, uint32_t(i_max));
+		mpz_mul_2exp(zp_max, zp_max, _log2GlobalWorkSize);
+		mpz_sub_ui(zp_max, zp_max, 1);
+		mpz_mul_2exp(zp_max, zp_max, _n + 1);
+		mpz_add_ui(zp_max, zp_max, 1);
 
-		char p_min_str[32], p_max_str[32];
-		p_min96.get_str(p_min_str); p_max96.get_str(p_max_str);
+		char p_min_str[32]; mpz_get_str(p_min_str, 10, zp_min);
+		char p_max_str[32]; mpz_get_str(p_max_str, 10, zp_max);
 		std::cout << ((cnt != 0) ? "Resuming from a checkpoint, t" : "T") << "esting n = " << _n << " from " << p_min_str << " to " << p_max_str << std::endl;
+
+		mpz_clears(zp_min, zp_max, nullptr);
 
 		_startTime = timer::currentTime();
 		timer::time displayTime = _startTime, recordTime = _startTime;
@@ -346,14 +351,14 @@ public:
 		{
 			if (_quit) break;
 
-			engine.checkPrimes(globalWorkSize, i);
-			// const size_t primeCount = engine.readPrimeCount();
+			eng.generatePrimes(globalWorkSize, i);
+			// const size_t primeCount = eng.readPrimeCount();
 			// std::cout << primeCount << " primes" << std::endl;
-			engine.initFactors(globalWorkSize);
-			engine.checkFactors(globalWorkSize, N_2_factors_loop, localWorkSize);
-			// const size_t factorCount = engine.readFactorCount();
+			eng.initFactors(globalWorkSize);
+			eng.checkFactors(globalWorkSize, N_2_factors_loop, localWorkSize);
+			// const size_t factorCount = eng.readFactorCount();
 			// std::cout << factorCount << " factors" << std::endl;
-			engine.clearPrimes();
+			eng.clearPrimes();
 			++cnt;
 
 			const timer::time currentTime = timer::currentTime();
@@ -368,19 +373,19 @@ public:
 			if (timer::diffTime(currentTime, recordTime) > 300)
 			{
 				recordTime = currentTime;
-				saveFactors(engine, cnt, false);
+				saveFactors(eng, cnt);
 			}
 		}
 
 		if (cnt > 0)
 		{
 			std::cout << " terminating...         \r";
-			saveFactors(engine, cnt, true);
+			saveFactors(eng, cnt);
 		}
 
-		// engine.displayProfiles(1);
+		// eng.displayProfiles(1);
 
-		clearEngine(engine);
+		clearEngine(eng);
 
 		return true;
 	}

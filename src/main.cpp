@@ -14,7 +14,7 @@ Please give feedback to the authors if improvement is realized. It is distribute
 #include <vector>
 #include <iostream>
 
-#if defined (_WIN32)
+#if defined(_WIN32)
 #include <Windows.h>
 #else
 #include <signal.h>
@@ -32,7 +32,7 @@ private:
 	}
 
 private:
-#if defined (_WIN32)
+#if defined(_WIN32)
 	static BOOL WINAPI HandlerRoutine(DWORD)
 	{
 		quit(1);
@@ -43,7 +43,7 @@ private:
 public:
 	application()
 	{
-#if defined (_WIN32)	
+#if defined(_WIN32)	
 		SetConsoleCtrlHandler(HandlerRoutine, TRUE);
 #else
 		signal(SIGTERM, quit);
@@ -87,7 +87,7 @@ private:
 #endif
 
 		std::ostringstream ss;
-		ss << "gfsieve 0.7.4 " << sysver << ssc.str() << std::endl;
+		ss << "gfsieve 24.9.0 " << sysver << ssc.str() << std::endl;
 		ss << "Copyright (c) 2020, Yves Gallot" << std::endl;
 		ss << "gfsieve is free source code, under the MIT license." << std::endl;
 		if (nl) ss << std::endl;
@@ -99,9 +99,9 @@ private:
 	{
 		std::ostringstream ss;
 		ss << "Usage: gfsieve <n> <p_min> <p_max> [options]" << std::endl;
-		ss << "  <n>                     GFN exponent: b^{2^n} + 1" << std::endl;
-		ss << "  <p_min>                 the start of the p range, in P (10^15) values" << std::endl;
-		ss << "  <p_max>                 the end of the p range, in P (10^15) values" << std::endl;
+		ss << "  <n>                     GFN exponent: b^{2^n} + 1, 15 <= n <= 24" << std::endl;
+		ss << "  <p_min>                 start of the p range (unit is P = 10^15)" << std::endl;
+		ss << "  <p_max>                 end of the p range (unit is P = 10^15)" << std::endl;
 		ss << "  -d <n> or --device <n>  set device number=<n> (default 0)" << std::endl;
 		ss << "  -p                      display factors on the screen (default false)" << std::endl;
 		ss << "  -v or -V                print the startup banner and immediately exit" << std::endl;
@@ -126,15 +126,15 @@ public:
 
 		if (args.size() < 3) std::cout << usage();	// print usage, display devices and exit
 
-		ocl::platform platform;
-		platform.displayDevices();
+		platform pfm;
+		pfm.displayDevices();
 
 		if (args.size() < 3) return;
 
 		// parse args
-		const uint32_t n = (args.size() > 0) ? std::atoi(args[0].c_str()) : 13;	//21;
-		const uint32_t p_min = (args.size() > 1) ? std::atoi(args[1].c_str()) : 1105;	//100000;
-		const uint32_t p_max = (args.size() > 2) ? std::atoi(args[2].c_str()) : 1106;	//100001;
+		const uint32_t n = (args.size() > 0) ? std::atoi(args[0].c_str()) : 15;	//21;
+		const uint32_t p_min = (args.size() > 1) ? std::atoi(args[1].c_str()) : 100000000;	// 9220000, 100000000
+		const uint32_t p_max = (args.size() > 2) ? std::atoi(args[2].c_str()) : 100000010;	// 9220010, 100000010
 		size_t d = 0;
 		bool display = false;
 		for (size_t i = 3, size = args.size(); i < size; ++i)
@@ -145,20 +145,21 @@ public:
 			{
 				const std::string dev = ((arg == "-d") && (i + 1 < size)) ? args[++i] : arg.substr(2);
 				d = std::atoi(dev.c_str());
-				if (d >= platform.getDeviceCount()) throw std::runtime_error("invalid device number");
+				if (d >= pfm.getDeviceCount()) throw std::runtime_error("invalid device number");
 			}
 
 			if (arg == "-p") display = true;
 		}
 
-		if ((n < 6) || (n > 24)) return;
-		if (p_min < 1) return;
-		if (p_max <= p_min) return;
+		if (n < 15) throw std::runtime_error("n must be greater than 14");
+		if (n > 24) throw std::runtime_error("n must be lesser than 25");
+		if (p_min < 1) throw std::runtime_error("p_min must be greater than 0");
+		if (p_max <= p_min) throw std::runtime_error("p_max must be greater than p_min");
 
 		gfsieve & sieve = gfsieve::getInstance();
 
-		engine engine(platform, d);
-		sieve.check(engine, n, p_min, p_max, display);
+		engine eng(pfm, d);
+		sieve.check(eng, n, p_min, p_max, display);
 	}
 };
 

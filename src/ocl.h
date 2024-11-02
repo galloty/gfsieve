@@ -8,7 +8,7 @@ Please give feedback to the authors if improvement is realized. It is distribute
 #pragma once
 
 #define CL_TARGET_OPENCL_VERSION 110
-#if defined (__APPLE__)
+#if defined(__APPLE__)
 	#include <OpenCL/cl.h>
 	#include <OpenCL/cl_ext.h>
 #else
@@ -26,12 +26,8 @@ Please give feedback to the authors if improvement is realized. It is distribute
 #include <fstream>
 #include <iostream>
 
-namespace ocl
-{
-
 // #define ocl_debug		1
-// #define ocl_fast_exec		1
-#define ocl_device_type		CL_DEVICE_TYPE_GPU	// CL_DEVICE_TYPE_ALL
+#define ocl_fast_exec		1
 
 class oclObject
 {
@@ -124,31 +120,9 @@ private:
 	};
 	std::vector<deviceDesc> _devices;
 
-private:
-	static bool getDoubleSupport(const cl_device_id device)
+protected:
+	void findDevices(const bool gpu)
 	{
-		cl_uint dWidth; clGetDeviceInfo(device, CL_DEVICE_PREFERRED_VECTOR_WIDTH_DOUBLE, sizeof(cl_uint), &dWidth, nullptr);
-		if (dWidth == 0) return false;
-
-		bool doubleSupport = false;
-		size_t extSize; clGetDeviceInfo(device, CL_DEVICE_EXTENSIONS, 0, nullptr, &extSize);
-		if (extSize > 0)
-		{
-			std::vector<char> extensions(extSize + 1);
-			clGetDeviceInfo(device, CL_DEVICE_EXTENSIONS, extSize, extensions.data(), nullptr);
-			extensions[extSize] = '\0';
-			for (size_t i = 0; i < extSize; ++i) extensions[i] = tolower(extensions[i]);
-			doubleSupport = (strstr(extensions.data(), "fp64") != nullptr);
-		}
-		return doubleSupport;
-	}
-
-public:
-	platform()
-	{
-#if defined (ocl_debug)
-		std::cerr << "Create ocl platform." << std::endl;
-#endif
 		cl_uint num_platforms;
 		cl_platform_id platforms[64];
 		oclFatal(clGetPlatformIDs(64, platforms, &num_platforms));
@@ -159,31 +133,38 @@ public:
 
 			cl_uint num_devices;
 			cl_device_id devices[64];
-			if (oclError(clGetDeviceIDs(platforms[p], ocl_device_type, 64, devices, &num_devices)))
+			if (oclError(clGetDeviceIDs(platforms[p], gpu ? CL_DEVICE_TYPE_GPU : CL_DEVICE_TYPE_ALL, 64, devices, &num_devices)))
 			{
 				for (cl_uint d = 0; d < num_devices; ++d)
 				{
-					if (getDoubleSupport(devices[d]))
-					{
-						char deviceName[1024]; oclFatal(clGetDeviceInfo(devices[d], CL_DEVICE_NAME, 1024, deviceName, nullptr));
-						char deviceVendor[1024]; oclFatal(clGetDeviceInfo(devices[d], CL_DEVICE_VENDOR, 1024, deviceVendor, nullptr));
+					char deviceName[1024]; oclFatal(clGetDeviceInfo(devices[d], CL_DEVICE_NAME, 1024, deviceName, nullptr));
+					char deviceVendor[1024]; oclFatal(clGetDeviceInfo(devices[d], CL_DEVICE_VENDOR, 1024, deviceVendor, nullptr));
 
-						std::stringstream ss; ss << "device '" << deviceName << "', vendor '" << deviceVendor << "', platform '" << platformName << "'";
-						deviceDesc device;
-						device.platform_id = platforms[p];
-						device.device_id = devices[d];
-						device.name = ss.str();
-						_devices.push_back(device);
-					}
+					std::ostringstream ss; ss << "device '" << deviceName << "', vendor '" << deviceVendor << "', platform '" << platformName << "'";
+					deviceDesc device;
+					device.platform_id = platforms[p];
+					device.device_id = devices[d];
+					device.name = ss.str();
+					_devices.push_back(device);
 				}
 			}
 		}
 	}
 
 public:
+	platform()
+	{
+#if defined(ocl_debug)
+		std::cerr << "Create ocl platform." << std::endl;
+#endif
+		findDevices(true);
+		if (_devices.empty()) findDevices(false);
+	}
+
+public:
 	virtual ~platform()
 	{
-#if defined (ocl_debug)
+#if defined(ocl_debug)
 		std::cerr << "Delete ocl platform." << std::endl;
 #endif
 	}
@@ -192,15 +173,15 @@ public:
 	size_t getDeviceCount() const { return _devices.size(); }
 
 public:
-	void displayDevices() const
+	size_t displayDevices() const
 	{
-		std::ostringstream ss;
-		for (size_t i = 0, n = _devices.size(); i < n; ++i)
+		const size_t n = _devices.size();
+		for (size_t i = 0; i < n; ++i)
 		{
-			ss << i << " - " << _devices[i].name << "." << std::endl;
+			std::cout << i << " - " << _devices[i].name << "." << std::endl;
 		}
-		ss << std::endl;
-		std::cout << ss.str();
+		std::cout << std::endl;
+		return n;
 	}
 
 public:
@@ -213,11 +194,11 @@ class device : oclObject
 private:
 	const cl_platform_id _platform;
 	const cl_device_id _device;
-#if defined (ocl_debug)
+#if defined(ocl_debug)
 	const size_t _d;
 #endif
 	bool _profile = false;
-#if defined (__APPLE__)
+#if defined(__APPLE__)
 	bool _isSync = true;
 #else
 	bool _isSync = false;
@@ -247,11 +228,11 @@ private:
 
 public:
 	device(const platform & parent, const size_t d) : _platform(parent.getPlatform(d)), _device(parent.getDevice(d))
-#if defined (ocl_debug)
+#if defined(ocl_debug)
 		, _d(d)
 #endif
 	{
-#if defined (ocl_debug)
+#if defined(ocl_debug)
 		std::cerr << "Create ocl device " << d << "." << std::endl;
 #endif
 
@@ -270,13 +251,11 @@ public:
 		oclFatal(clGetDeviceInfo(_device, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(_maxWorkGroupSize), &_maxWorkGroupSize, nullptr));
 		oclFatal(clGetDeviceInfo(_device, CL_DEVICE_PROFILING_TIMER_RESOLUTION, sizeof(_timerResolution), &_timerResolution, nullptr));
 
-		std::ostringstream ssd;
-		ssd << "Running on device '" << deviceName<< "', vendor '" << deviceVendor
-			<< "', version '" << deviceVersion << "' and driver '" << driverVersion << "'." << std::endl;
-		ssd << computeUnits << " compUnits @ " << maxClockFrequency << "MHz, mem=" << (memSize >> 20) << "MB, cache="
-			<< (memCacheSize >> 10) << "kB, cacheLine=" << memCacheLineSize << "B, localMem=" << (_localMemSize >> 10)
-			<< "kB, constMem=" << (memConstSize >> 10) << "kB, maxWorkGroup=" << _maxWorkGroupSize << "." << std::endl << std::endl;
-		std::cout << ssd.str();
+		std::cout << "Running on device '" << deviceName << "', vendor '" << deviceVendor
+			<< "', version '" << deviceVersion << "', driver '" << driverVersion << "'" << std::endl;
+		std::cout << computeUnits << " compUnits @ " << maxClockFrequency << "MHz, mem = " << (memSize >> 20) << "MB, cache = "
+			<< (memCacheSize >> 10) << "kB, cacheLine = " << memCacheLineSize << "B, localMem = " << (_localMemSize >> 10)
+			<< "kB, constMem = " << (memConstSize >> 10) << "kB, maxWorkGroup = " << _maxWorkGroupSize << "." << std::endl << std::endl;
 
 		const cl_context_properties contextProperties[3] = { CL_CONTEXT_PLATFORM, (cl_context_properties)_platform, 0 };
 		cl_int err_cc;
@@ -294,16 +273,18 @@ public:
 public:
 	virtual ~device()
 	{
-#if defined (ocl_debug)
+#if defined(ocl_debug)
 		std::cerr << "Delete ocl device " << _d << "." << std::endl;
 #endif
-		oclFatal(clReleaseCommandQueue(_queue));
+		oclFatal(clReleaseCommandQueue(_queueP));
+		oclFatal(clReleaseCommandQueue(_queueF));
 		oclFatal(clReleaseContext(_context));
 	}
 
 public:
 	size_t getMaxWorkGroupSize() const { return _maxWorkGroupSize; }
 	size_t getLocalMemSize() const { return _localMemSize; }
+	size_t getTimerResolution() const { return _timerResolution; }
 
 private:
 	static EVendor getVendor(const std::string & vendorString)
@@ -372,7 +353,7 @@ public:
 public:
 	void loadProgram(const std::string & programSrc)
 	{
-#if defined (ocl_debug)
+#if defined(ocl_debug)
 		std::cerr << "Load ocl program." << std::endl;
 #endif
 		const char * src[1]; src[0] = programSrc.c_str();
@@ -382,12 +363,12 @@ public:
 
 		char pgmOptions[1024];
 		strcpy(pgmOptions, "");
-#if defined (ocl_debug)
-		strcat(pgmOptions, " -cl-nv-verbose");
+#if defined(ocl_debug)
+		// strcat(pgmOptions, " -cl-nv-verbose");
 #endif
 		const cl_int err = clBuildProgram(_program, 1, &_device, pgmOptions, nullptr, nullptr);
 
-#if !defined (ocl_debug)
+#if !defined(ocl_debug)
 		if (err != CL_SUCCESS)
 #endif		
 		{
@@ -399,7 +380,7 @@ public:
 				buildLog[logSize] = '\0';
 				std::ostringstream ss; ss << buildLog.data() << std::endl;
 				std::cout << ss.str();
-#if defined (ocl_debug)
+#if defined(ocl_debug)
 				std::ofstream fileOut("pgm.log"); 
 				fileOut << buildLog.data() << std::endl;
 				fileOut.close();
@@ -409,12 +390,12 @@ public:
 
 		oclFatal(err);
 
-#if defined (ocl_debug)
+#if defined(ocl_debug)
 		size_t binSize; clGetProgramInfo(_program, CL_PROGRAM_BINARY_SIZES, sizeof(size_t), &binSize, nullptr);
 		std::vector<char> binary(binSize);
 		clGetProgramInfo(_program, CL_PROGRAM_BINARIES, sizeof(char *), &binary, nullptr);
-		std::ofstream fileOut("pgm.txt", std::ios::binary);
-		fileOut.write(binary.data(), binSize);
+		std::ofstream fileOut("pgm.bin", std::ios::binary);
+		fileOut.write(binary.data(), std::streamsize(binSize));
 		fileOut.close();
 #endif	
 	}
@@ -422,7 +403,7 @@ public:
 public:
 	void clearProgram()
 	{
-#if defined (ocl_debug)
+#if defined(ocl_debug)
 		std::cerr << "Clear ocl program." << std::endl;
 #endif
 		oclFatal(clReleaseProgram(_program));
@@ -465,6 +446,9 @@ protected:
 protected:
 	void _readBuffer(cl_mem & mem, void * const ptr, const size_t size)
 	{
+		// Fill the buffer with random numbers to generate an error even if clEnqueueReadBuffer fails without error.
+		char * const cptr = static_cast<char *>(ptr);
+		for (size_t i = 0; i < size; ++i) cptr[i] = static_cast<char>(std::rand());
 		_sync();
 		oclFatal(clEnqueueReadBuffer(_queue, mem, CL_TRUE, 0, size, ptr, 0, nullptr, nullptr));
 	}
@@ -499,11 +483,11 @@ protected:
 protected:
 	static void _setKernelArg(cl_kernel kernel, const cl_uint arg_index, const size_t arg_size, const void * const arg_value)
 	{
-#if !defined (ocl_fast_exec) || defined (ocl_debug)
+#if !defined(ocl_fast_exec) || defined(ocl_debug)
 		cl_int err =
 #endif
 		clSetKernelArg(kernel, arg_index, arg_size, arg_value);
-#if !defined (ocl_fast_exec) || defined (ocl_debug)
+#if !defined(ocl_fast_exec) || defined(ocl_debug)
 		oclFatal(err);
 #endif
 	}
@@ -513,11 +497,11 @@ protected:
 	{
 		if (!_profile)
 		{
-#if !defined (ocl_fast_exec) || defined (ocl_debug)
+#if !defined(ocl_fast_exec) || defined(ocl_debug)
 			cl_int err =
 #endif
 			clEnqueueNDRangeKernel(_queue, kernel, 1, nullptr, &globalWorkSize, (localWorkSize == 0) ? nullptr : &localWorkSize, 0, nullptr, nullptr);
-#if !defined (ocl_fast_exec) || defined (ocl_debug)
+#if !defined(ocl_fast_exec) || defined(ocl_debug)
 			oclFatal(err);
 #endif
 			if (_isSync)
@@ -547,5 +531,3 @@ protected:
 		}
 	}
 };
-
-}

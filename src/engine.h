@@ -9,70 +9,80 @@ Please give feedback to the authors if improvement is realized. It is distribute
 
 #include "ocl.h"
 
-class engine : public ocl::device
+class engine : public device
 {
 private:
-	cl_mem _prime_vector = nullptr, _factor_vector = nullptr, _c_vector = nullptr, _a2k_vector = nullptr, _a2k_inv_vector = nullptr;
+	cl_mem _p_vector = nullptr, _q_vector = nullptr, _one_vector = nullptr;
+	cl_mem _c_vector = nullptr, _a2k_vector = nullptr, _factor_vector = nullptr;
 	cl_mem _prime_count = nullptr, _factor_count = nullptr;
-	cl_kernel _check_primes = nullptr, _init_factors = nullptr, _check_factors = nullptr, _clear_primes = nullptr;
+	cl_mem _kro_vector = nullptr;
+	cl_kernel _generate_primes = nullptr, _init_factors = nullptr, _check_factors = nullptr, _clear_primes = nullptr;
 
 public:
-	engine(const ocl::platform & platform, const size_t d) : ocl::device(platform, d) {}
+	engine(const platform & pfm, const size_t d) : device(pfm, d) {}
 	virtual ~engine() {}
 
 public:
 	void allocMemory(const size_t prime_size, const size_t factor_size)
 	{
-#if defined (ocl_debug)
+#if defined(ocl_debug)
 		std::cerr << "Alloc gpu memory." << std::endl;
 #endif
-		_prime_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
-		_factor_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * factor_size, false);
+		_p_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
+		_q_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
+		_one_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
 		_c_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
 		_a2k_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
-		_a2k_inv_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
+		_factor_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * factor_size, false);
 		_prime_count = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_uint));
 		_factor_count = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_uint));
+		_kro_vector = _createBuffer(CL_MEM_READ_ONLY, 128 * 256 * sizeof(cl_char));
 	}
 
 public:
 	void releaseMemory()
 	{
-#if defined (ocl_debug)
+#if defined(ocl_debug)
 		std::cerr << "Free gpu memory." << std::endl;
 #endif
-		_releaseBuffer(_prime_vector);
-		_releaseBuffer(_factor_vector);
+		_releaseBuffer(_p_vector);
+		_releaseBuffer(_q_vector);
+		_releaseBuffer(_one_vector);
 		_releaseBuffer(_c_vector);
 		_releaseBuffer(_a2k_vector);
-		_releaseBuffer(_a2k_inv_vector);
+		_releaseBuffer(_factor_vector);
 		_releaseBuffer(_prime_count);
 		_releaseBuffer(_factor_count);
+		_releaseBuffer(_kro_vector);
 	}
 
 public:
 	void createKernels()
 	{
-#if defined (ocl_debug)
+#if defined(ocl_debug)
 		std::cerr << "Create ocl kernels." << std::endl;
 #endif
-		_check_primes = _createKernel("check_primes");
-		_setKernelArg(_check_primes, 0, sizeof(cl_mem), &_prime_count);
-		_setKernelArg(_check_primes, 1, sizeof(cl_mem), &_prime_vector);
+		_generate_primes = _createKernel("generate_primes");
+		_setKernelArg(_generate_primes, 0, sizeof(cl_mem), &_prime_count);
+		_setKernelArg(_generate_primes, 1, sizeof(cl_mem), &_p_vector);
+		_setKernelArg(_generate_primes, 2, sizeof(cl_mem), &_q_vector);
+		_setKernelArg(_generate_primes, 3, sizeof(cl_mem), &_one_vector);
 
 		_init_factors = _createKernel("init_factors");
 		_setKernelArg(_init_factors, 0, sizeof(cl_mem), &_prime_count);
-		_setKernelArg(_init_factors, 1, sizeof(cl_mem), &_prime_vector);
-		_setKernelArg(_init_factors, 2, sizeof(cl_mem), &_a2k_vector);
-		_setKernelArg(_init_factors, 3, sizeof(cl_mem), &_a2k_inv_vector);
-		_setKernelArg(_init_factors, 4, sizeof(cl_mem), &_c_vector);
+		_setKernelArg(_init_factors, 1, sizeof(cl_mem), &_p_vector);
+		_setKernelArg(_init_factors, 2, sizeof(cl_mem), &_q_vector);
+		_setKernelArg(_init_factors, 3, sizeof(cl_mem), &_one_vector);
+		_setKernelArg(_init_factors, 4, sizeof(cl_mem), &_kro_vector);
+		_setKernelArg(_init_factors, 5, sizeof(cl_mem), &_c_vector);
+		_setKernelArg(_init_factors, 6, sizeof(cl_mem), &_a2k_vector);
 
 		_check_factors = _createKernel("check_factors");
 		_setKernelArg(_check_factors, 0, sizeof(cl_mem), &_prime_count);
-		_setKernelArg(_check_factors, 1, sizeof(cl_mem), &_prime_vector);
-		_setKernelArg(_check_factors, 2, sizeof(cl_mem), &_a2k_vector);
-		_setKernelArg(_check_factors, 3, sizeof(cl_mem), &_a2k_inv_vector);
-		_setKernelArg(_check_factors, 4, sizeof(cl_mem), &_c_vector);
+		_setKernelArg(_check_factors, 1, sizeof(cl_mem), &_p_vector);
+		_setKernelArg(_check_factors, 2, sizeof(cl_mem), &_q_vector);
+		_setKernelArg(_check_factors, 3, sizeof(cl_mem), &_c_vector);
+		_setKernelArg(_check_factors, 4, sizeof(cl_mem), &_a2k_vector);
 		_setKernelArg(_check_factors, 5, sizeof(cl_mem), &_factor_count);
 		_setKernelArg(_check_factors, 6, sizeof(cl_mem), &_factor_vector);
 
@@ -83,10 +93,13 @@ public:
 public:
 	void releaseKernels()
 	{
-#if defined (ocl_debug)
+#if defined(ocl_debug)
 		std::cerr << "Release ocl kernels." << std::endl;
 #endif
-		_releaseKernel(_check_primes);
+		_releaseKernel(_generate_primes);
+		_releaseKernel(_init_factors);
+		_releaseKernel(_check_factors);
+		_releaseKernel(_clear_primes);
 	}
 
 public:
@@ -95,12 +108,14 @@ public:
 	cl_uint readFactorCount() { cl_uint count; _readBuffer(_factor_count, &count, sizeof(cl_uint)); return count; }
 	void readFactors(cl_ulong2 * const ptr, const size_t count) { if (count > 0) _readBuffer(_factor_vector, ptr, sizeof(cl_ulong2) * count); }
 
+	void writeKronecker(const cl_char * const data) { _writeBuffer(_kro_vector, data, 128 * 256 * sizeof(cl_char)); }
+
 public:
-	void checkPrimes(const size_t count, const uint64_t index)
+	void generatePrimes(const size_t count, const uint64_t index)
 	{
 		const cl_ulong i = cl_ulong(index);
-		_setKernelArg(_check_primes, 2, sizeof(cl_ulong), &i);
-		_executeKernel(_check_primes, count);
+		_setKernelArg(_generate_primes, 4, sizeof(cl_ulong), &i);
+		_executeKernel(_generate_primes, count);
 	}
 
 public:
