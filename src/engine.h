@@ -12,7 +12,7 @@ Please give feedback to the authors if improvement is realized. It is distribute
 class engine : public device
 {
 private:
-	cl_mem _p_vector = nullptr, _q_vector = nullptr, _one_vector = nullptr;
+	cl_mem _k_vector = nullptr, _q_vector = nullptr, _one_vector = nullptr;
 	cl_mem _c_vector = nullptr, _a2k_vector = nullptr, _factor_vector = nullptr;
 	cl_mem _prime_count = nullptr, _factor_count = nullptr;
 	cl_mem _kro_vector = nullptr;
@@ -28,7 +28,7 @@ public:
 #if defined(ocl_debug)
 		std::cerr << "Alloc gpu memory." << std::endl;
 #endif
-		_p_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
+		_k_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong) * prime_size);
 		_q_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
 		_one_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
 		_c_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
@@ -45,7 +45,7 @@ public:
 #if defined(ocl_debug)
 		std::cerr << "Free gpu memory." << std::endl;
 #endif
-		_releaseBuffer(_p_vector);
+		_releaseBuffer(_k_vector);
 		_releaseBuffer(_q_vector);
 		_releaseBuffer(_one_vector);
 		_releaseBuffer(_c_vector);
@@ -64,13 +64,13 @@ public:
 #endif
 		_generate_primes = _createKernel("generate_primes");
 		_setKernelArg(_generate_primes, 0, sizeof(cl_mem), &_prime_count);
-		_setKernelArg(_generate_primes, 1, sizeof(cl_mem), &_p_vector);
+		_setKernelArg(_generate_primes, 1, sizeof(cl_mem), &_k_vector);
 		_setKernelArg(_generate_primes, 2, sizeof(cl_mem), &_q_vector);
 		_setKernelArg(_generate_primes, 3, sizeof(cl_mem), &_one_vector);
 
 		_init_factors = _createKernel("init_factors");
 		_setKernelArg(_init_factors, 0, sizeof(cl_mem), &_prime_count);
-		_setKernelArg(_init_factors, 1, sizeof(cl_mem), &_p_vector);
+		_setKernelArg(_init_factors, 1, sizeof(cl_mem), &_k_vector);
 		_setKernelArg(_init_factors, 2, sizeof(cl_mem), &_q_vector);
 		_setKernelArg(_init_factors, 3, sizeof(cl_mem), &_one_vector);
 		_setKernelArg(_init_factors, 4, sizeof(cl_mem), &_kro_vector);
@@ -79,7 +79,7 @@ public:
 
 		_check_factors = _createKernel("check_factors");
 		_setKernelArg(_check_factors, 0, sizeof(cl_mem), &_prime_count);
-		_setKernelArg(_check_factors, 1, sizeof(cl_mem), &_p_vector);
+		_setKernelArg(_check_factors, 1, sizeof(cl_mem), &_k_vector);
 		_setKernelArg(_check_factors, 2, sizeof(cl_mem), &_q_vector);
 		_setKernelArg(_check_factors, 3, sizeof(cl_mem), &_c_vector);
 		_setKernelArg(_check_factors, 4, sizeof(cl_mem), &_a2k_vector);

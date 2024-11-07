@@ -5,6 +5,10 @@ gfsieve is free source code, under the MIT license (see LICENSE). You can redist
 Please give feedback to the authors if improvement is realized. It is distributed in the hope that it will be useful.
 */
 
+#ifdef __NV_CL_C_VERSION
+	#define PTX_ASM	1
+#endif
+
 typedef uint	uint32;
 typedef ulong	uint64;
 
@@ -81,7 +85,7 @@ inline bool prp(const uint64 p, const uint64 q, const uint64 one)
 }
 
 __kernel
-void generate_primes(__global uint * restrict const prime_count, __global ulong2 * restrict const p_vector,
+void generate_primes(__global uint * restrict const prime_count, __global ulong * restrict const k_vector,
 	__global ulong2 * restrict const q_vector, __global ulong2 * restrict const one_vector, const ulong i)
 {
 	const uint64 k = (i << log2GlobalWorkSize) | get_global_id(0);
@@ -90,14 +94,14 @@ void generate_primes(__global uint * restrict const prime_count, __global ulong2
 	if (prp(p, q, one))
 	{
 		const uint prime_index = atomic_inc(prime_count);
-		p_vector[prime_index] = (ulong2)(p, (ulong)(0));
+		k_vector[prime_index] = k;
 		q_vector[prime_index] = (ulong2)(q, (ulong)(0));
 		one_vector[prime_index] = (ulong2)(one, (ulong)(0));
 	}
 }
 
 __kernel
-void init_factors(__global const uint * restrict const prime_count, __global const ulong2 * restrict const p_vector,
+void init_factors(__global const uint * restrict const prime_count, __global const ulong * restrict const k_vector,
 	__global const ulong2 * restrict const q_vector, __global const ulong2 * restrict const one_vector,
 	__global const char * restrict const _kro_vector,
 	__global ulong2 * restrict const c_vector, __global ulong2 * restrict const a2k_vector)
@@ -105,7 +109,8 @@ void init_factors(__global const uint * restrict const prime_count, __global con
 	const size_t i = get_global_id(0);
 	if (i >= *prime_count) return;
 
-	const uint64 p = p_vector[i].s0, q = q_vector[i].s0, one = one_vector[i].s0;
+	const uint64 k = k_vector[i];
+	const uint64 p = (k << (gfn_n + 1)) | 1, q = q_vector[i].s0, one = one_vector[i].s0;
 	const uint64 two = add_mod(one, one, p);
 
 	// p = 1 (mod 4). If a is odd then (a/p) = (p/a) = ({p mod a}/a)
@@ -134,7 +139,6 @@ void init_factors(__global const uint * restrict const prime_count, __global con
 		}
 	}
 
-	const uint64 k = p >> (gfn_n + 1);
 	const uint64 cm = pow_mod(am, k, p, q);
 
 	const uint64 c = toInt(cm, p, q);
@@ -146,14 +150,14 @@ void init_factors(__global const uint * restrict const prime_count, __global con
 
 __kernel
 void check_factors(__global const uint * restrict const prime_count,
-	__global const ulong2 * restrict const p_vector, __global const ulong2 * restrict const q_vector,
+	__global const ulong * restrict const k_vector, __global const ulong2 * restrict const q_vector,
 	__global ulong2 * restrict const c_vector, __global const ulong2 * restrict const a2k_vector,
 	__global uint * restrict const factor_count, __global ulong2 * restrict const factor)
 {
 	const size_t i = get_global_id(0);
 	if (i >= *prime_count) return;
 
-	const uint64 p = p_vector[i].s0, q = q_vector[i].s0;
+	const uint64 p = (k_vector[i] << (gfn_n + 1)) | 1, q = q_vector[i].s0;
 
 	uint64 c = c_vector[i].s0;
 	if (c == 0) return;

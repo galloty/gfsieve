@@ -17,6 +17,10 @@ static const char * const src_ocl_sieve64 = \
 "Please give feedback to the authors if improvement is realized. It is distributed in the hope that it will be useful.\n" \
 "*/\n" \
 "\n" \
+"#ifdef __NV_CL_C_VERSION\n" \
+"	#define PTX_ASM	1\n" \
+"#endif\n" \
+"\n" \
 "typedef uint	uint32;\n" \
 "typedef ulong	uint64;\n" \
 "\n" \
@@ -93,7 +97,7 @@ static const char * const src_ocl_sieve64 = \
 "}\n" \
 "\n" \
 "__kernel\n" \
-"void generate_primes(__global uint * restrict const prime_count, __global ulong2 * restrict const p_vector,\n" \
+"void generate_primes(__global uint * restrict const prime_count, __global ulong * restrict const k_vector,\n" \
 "	__global ulong2 * restrict const q_vector, __global ulong2 * restrict const one_vector, const ulong i)\n" \
 "{\n" \
 "	const uint64 k = (i << log2GlobalWorkSize) | get_global_id(0);\n" \
@@ -102,14 +106,14 @@ static const char * const src_ocl_sieve64 = \
 "	if (prp(p, q, one))\n" \
 "	{\n" \
 "		const uint prime_index = atomic_inc(prime_count);\n" \
-"		p_vector[prime_index] = (ulong2)(p, (ulong)(0));\n" \
+"		k_vector[prime_index] = k;\n" \
 "		q_vector[prime_index] = (ulong2)(q, (ulong)(0));\n" \
 "		one_vector[prime_index] = (ulong2)(one, (ulong)(0));\n" \
 "	}\n" \
 "}\n" \
 "\n" \
 "__kernel\n" \
-"void init_factors(__global const uint * restrict const prime_count, __global const ulong2 * restrict const p_vector,\n" \
+"void init_factors(__global const uint * restrict const prime_count, __global const ulong * restrict const k_vector,\n" \
 "	__global const ulong2 * restrict const q_vector, __global const ulong2 * restrict const one_vector,\n" \
 "	__global const char * restrict const _kro_vector,\n" \
 "	__global ulong2 * restrict const c_vector, __global ulong2 * restrict const a2k_vector)\n" \
@@ -117,7 +121,8 @@ static const char * const src_ocl_sieve64 = \
 "	const size_t i = get_global_id(0);\n" \
 "	if (i >= *prime_count) return;\n" \
 "\n" \
-"	const uint64 p = p_vector[i].s0, q = q_vector[i].s0, one = one_vector[i].s0;\n" \
+"	const uint64 k = k_vector[i];\n" \
+"	const uint64 p = (k << (gfn_n + 1)) | 1, q = q_vector[i].s0, one = one_vector[i].s0;\n" \
 "	const uint64 two = add_mod(one, one, p);\n" \
 "\n" \
 "	// p = 1 (mod 4). If a is odd then (a/p) = (p/a) = ({p mod a}/a)\n" \
@@ -146,7 +151,6 @@ static const char * const src_ocl_sieve64 = \
 "		}\n" \
 "	}\n" \
 "\n" \
-"	const uint64 k = p >> (gfn_n + 1);\n" \
 "	const uint64 cm = pow_mod(am, k, p, q);\n" \
 "\n" \
 "	const uint64 c = toInt(cm, p, q);\n" \
@@ -158,14 +162,14 @@ static const char * const src_ocl_sieve64 = \
 "\n" \
 "__kernel\n" \
 "void check_factors(__global const uint * restrict const prime_count,\n" \
-"	__global const ulong2 * restrict const p_vector, __global const ulong2 * restrict const q_vector,\n" \
+"	__global const ulong * restrict const k_vector, __global const ulong2 * restrict const q_vector,\n" \
 "	__global ulong2 * restrict const c_vector, __global const ulong2 * restrict const a2k_vector,\n" \
 "	__global uint * restrict const factor_count, __global ulong2 * restrict const factor)\n" \
 "{\n" \
 "	const size_t i = get_global_id(0);\n" \
 "	if (i >= *prime_count) return;\n" \
 "\n" \
-"	const uint64 p = p_vector[i].s0, q = q_vector[i].s0;\n" \
+"	const uint64 p = (k_vector[i] << (gfn_n + 1)) | 1, q = q_vector[i].s0;\n" \
 "\n" \
 "	uint64 c = c_vector[i].s0;\n" \
 "	if (c == 0) return;\n" \
