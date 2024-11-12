@@ -86,31 +86,31 @@ inline bool prp(const uint64 p, const uint64 q, const uint64 one)
 
 __kernel
 void generate_primes(__global uint * restrict const prime_count, __global ulong * restrict const k_vector,
-	__global ulong2 * restrict const q_vector, __global ulong2 * restrict const one_vector, const ulong i)
+	__global ulong2 * restrict const k_ext_vector, const ulong i)
 {
 	const uint64 k = (i << log2GlobalWorkSize) | get_global_id(0);
 
-	const uint64 p = (k << (gfn_n + 1)) | 1, q = invert(p), one = (-p) % p;
+	const uint64 p = (k << g_n) | 1, q = invert(p), one = (-p) % p;
 	if (prp(p, q, one))
 	{
 		const uint prime_index = atomic_inc(prime_count);
 		k_vector[prime_index] = k;
-		q_vector[prime_index] = (ulong2)(q, (ulong)(0));
-		one_vector[prime_index] = (ulong2)(one, (ulong)(0));
+		k_ext_vector[prime_index] = (ulong2)(q, one);
 	}
 }
 
 __kernel
 void init_factors(__global const uint * restrict const prime_count, __global const ulong * restrict const k_vector,
-	__global const ulong2 * restrict const q_vector, __global const ulong2 * restrict const one_vector,
-	__global const char * restrict const _kro_vector,
+	__global const ulong2 * restrict const k_ext_vector, __global const char * restrict const _kro_vector,
 	__global ulong2 * restrict const c_vector, __global ulong2 * restrict const a2k_vector)
 {
 	const size_t i = get_global_id(0);
 	if (i >= *prime_count) return;
 
 	const uint64 k = k_vector[i];
-	const uint64 p = (k << (gfn_n + 1)) | 1, q = q_vector[i].s0, one = one_vector[i].s0;
+	const ulong2 k_ext = k_ext_vector[i];
+
+	const uint64 p = (k << g_n) | 1, q = k_ext.s0, one = k_ext.s1;
 	const uint64 two = add_mod(one, one, p);
 
 	// p = 1 (mod 4). If a is odd then (a/p) = (p/a) = ({p mod a}/a)
@@ -150,14 +150,14 @@ void init_factors(__global const uint * restrict const prime_count, __global con
 
 __kernel
 void check_factors(__global const uint * restrict const prime_count,
-	__global const ulong * restrict const k_vector, __global const ulong2 * restrict const q_vector,
+	__global const ulong * restrict const k_vector, __global const ulong2 * restrict const k_ext_vector,
 	__global ulong2 * restrict const c_vector, __global const ulong2 * restrict const a2k_vector,
 	__global uint * restrict const factor_count, __global ulong2 * restrict const factor)
 {
 	const size_t i = get_global_id(0);
 	if (i >= *prime_count) return;
 
-	const uint64 p = (k_vector[i] << (gfn_n + 1)) | 1, q = q_vector[i].s0;
+	const uint64 p = (k_vector[i] << g_n) | 1, q = k_ext_vector[i].s0;
 
 	uint64 c = c_vector[i].s0;
 	if (c == 0) return;

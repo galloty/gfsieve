@@ -97,7 +97,7 @@ inline uint64 divmod61_invert(const uint64 p, const int r)
 	// 2^{r - 2 + n + 1 - r} = 2^62 <= p_inv < 2^{r - 2 + n + 1 - (r - 1)} = 2^63
 	const int s = r - 2;
 
-	uint64 p_inv = 0, np_inv = (uint64)((~(uint32)(0)) / (uint32)(p >> 32)) << s;
+	uint64 p_inv = 0, np_inv = (uint64)((~(uint32)(0)) / ((uint32)(p >> 32) + 1)) << s;
 	while (p_inv < np_inv)
 	{
 		p_inv = np_inv;
@@ -189,11 +189,8 @@ inline Mod_k pow_mod(const Mod_k a, const uint64 e, const uint64 k, const int n,
 }
 
 // 2^{(p - 1)/2} ?= +/-1 mod p
-inline bool prp(const uint64 k, const int n)
+inline bool prp(const uint64 k, const int n, const uint64 k_inv, const int k_r)
 {
-	const int k_r = divmod61_exp(k);
-	const uint64 k_inv = divmod61_invert(k, k_r);
-
 	// e = (p - 1)/2 = k*2^{n - 1}
 	uint96 e; e.s0 = k << (n - 1); e.s1 = (uint32)(k >> (64 - (n - 1)));
 	int b = ilog2_96(e) - 1;
@@ -214,45 +211,48 @@ inline bool prp(const uint64 k, const int n)
 
 __kernel
 void generate_primes(__global uint * restrict const prime_count, __global ulong * restrict const k_vector,
-	__global ulong2 * restrict const q_vector, __global ulong2 * restrict const one_vector, const ulong i)
+	__global ulong2 * restrict const k_ext_vector, const ulong i)
 {
 	const uint64 k = (i << log2GlobalWorkSize) | get_global_id(0);
 
-	const int n = gfn_n + 1;
-	if (prp(k, n))
+	const int k_r = divmod61_exp(k);
+	const uint64 k_inv = divmod61_invert(k, k_r);
+	if (prp(k, g_n, k_inv, k_r))
 	{
 		const uint prime_index = atomic_inc(prime_count);
 		k_vector[prime_index] = k;
+		k_ext_vector[prime_index] = (ulong2)(k_inv, (ulong)(k_r));
 	}
 }
 
 __kernel
 void init_factors(__global const uint * restrict const prime_count, __global const ulong * restrict const k_vector,
-	__global /*const*/ ulong2 * restrict const q_vector, __global const ulong2 * restrict const one_vector,
-	__global const char * restrict const _kro_vector,
+	__global const ulong2 * restrict const k_ext_vector, __global const char * restrict const _kro_vector,
 	__global ulong2 * restrict const c_vector, __global ulong2 * restrict const a2k_vector)
 {
 	const size_t i = get_global_id(0);
 	if (i >= *prime_count) return;
 
 	const uint64 k = k_vector[i];
-	const int n = gfn_n + 1;
+	const ulong2 k_ext = k_ext_vector[i];
+	const uint64 k_inv = k_ext.s0;
+	const int k_r = (int)(k_ext.s1);
 
 	// p = 1 (mod 4). If a is odd then (a/p) = (p/a) = ({p mod a}/a)
 
 	uint32 a = 3;
-	if (kn_mod(k, n, 3) != 2)
+	if (kn_mod(k, g_n, 3) != 2)
 	{
 		a += 2;
-		if (_kro_vector[256 * ((5 - 3) / 2) + kn_mod(k, n, 5)] >= 0)
+		if (_kro_vector[256 * ((5 - 3) / 2) + kn_mod(k, g_n, 5)] >= 0)
 		{
 			a += 2;
-			if (_kro_vector[256 * ((7 - 3) / 2) + kn_mod(k, n, 7)] >= 0)
+			if (_kro_vector[256 * ((7 - 3) / 2) + kn_mod(k, g_n, 7)] >= 0)
 			{
 				a += 4;
 				while (a < 256)
 				{
-					if (_kro_vector[256 * ((a - 3) / 2) + kn_mod(k, n, a)] < 0) break;
+					if (_kro_vector[256 * ((a - 3) / 2) + kn_mod(k, g_n, a)] < 0) break;
 					a += 2;
 				}
 				if (a >= 256)
@@ -264,11 +264,9 @@ void init_factors(__global const uint * restrict const prime_count, __global con
 		}
 	}
 
-	const int k_r = divmod61_exp(k);
-	const uint64 k_inv = divmod61_invert(k, k_r);
 	Mod_k c; c.quot = 0; c.rem = a;
-	c = pow_mod(c, k, k, n, k_inv, k_r);
-	const Mod_k a2k = mul_mod(c, c, k, n, k_inv, k_r);
+	c = pow_mod(c, k, k, g_n, k_inv, k_r);
+	const Mod_k a2k = mul_mod(c, c, k, g_n, k_inv, k_r);
 
 	c_vector[i] = (ulong2)(c.rem, c.quot);
 	a2k_vector[i] = (ulong2)(a2k.rem, a2k.quot);
@@ -276,7 +274,7 @@ void init_factors(__global const uint * restrict const prime_count, __global con
 
 __kernel
 void check_factors(__global const uint * restrict const prime_count,
-	__global const ulong * restrict const k_vector, __global const ulong2 * restrict const q_vector,
+	__global const ulong * restrict const k_vector, __global const ulong2 * restrict const k_ext_vector,
 	__global ulong2 * restrict const c_vector, __global const ulong2 * restrict const a2k_vector,
 	__global uint * restrict const factor_count, __global ulong2 * restrict const factor)
 {
@@ -284,17 +282,16 @@ void check_factors(__global const uint * restrict const prime_count,
 	if (i >= *prime_count) return;
 
 	const uint64 k = k_vector[i];
-	const int n = gfn_n + 1;
+	const ulong2 k_ext = k_ext_vector[i];
+	const uint64 k_inv = k_ext.s0;
+	const int k_r = (int)(k_ext.s1);
 
 	const ulong2 c_val = c_vector[i];
 	Mod_k c; c.rem = c_val.s0; c.quot = (uint32)(c_val.s1);
 	const ulong2 a2k_val = a2k_vector[i];
 	Mod_k a2k; a2k.rem = a2k_val.s0; a2k.quot = (uint32)(a2k_val.s1);
 
-	const int k_r = divmod61_exp(k);
-	const uint64 k_inv = divmod61_invert(k, k_r);
-
-	const uint32 N = (uint32)(1) << n;
+	const uint32 N = (uint32)(1) << g_n;
 	for (size_t i = 0; i < factors_loop; ++i)
 	{
 		const uint32 parity = ((c.quot & (uint32)(k)) ^ (uint32)(c.rem)) & 1u;
@@ -308,12 +305,12 @@ void check_factors(__global const uint * restrict const prime_count,
 
 		if ((c.quot == 0) && (c.rem <= 2000000000u))
 		{
-			uint128 p; p.s0 = (k << n) | 1; p.s1 = k >> (64 - n);
+			uint128 p; p.s0 = (k << g_n) | 1; p.s1 = k >> (64 - g_n);
 			const uint factor_index = atomic_inc(factor_count);
 			factor[factor_index] = (ulong2)(p.s0, p.s1 | (c.rem << 32));
 		}
 
-		c = mul_mod(c, a2k, k, n, k_inv, k_r);		// c = a^{(2*i + 1).k}
+		c = mul_mod(c, a2k, k, g_n, k_inv, k_r);		// c = a^{(2*i + 1).k}
 	}
 
 	c_vector[i] = (ulong2)(c.rem, c.quot);

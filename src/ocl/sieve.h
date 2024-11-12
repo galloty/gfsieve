@@ -109,7 +109,7 @@ static const char * const src_ocl_sieve = \
 "	// 2^{r - 2 + n + 1 - r} = 2^62 <= p_inv < 2^{r - 2 + n + 1 - (r - 1)} = 2^63\n" \
 "	const int s = r - 2;\n" \
 "\n" \
-"	uint64 p_inv = 0, np_inv = (uint64)((~(uint32)(0)) / (uint32)(p >> 32)) << s;\n" \
+"	uint64 p_inv = 0, np_inv = (uint64)((~(uint32)(0)) / ((uint32)(p >> 32) + 1)) << s;\n" \
 "	while (p_inv < np_inv)\n" \
 "	{\n" \
 "		p_inv = np_inv;\n" \
@@ -201,11 +201,8 @@ static const char * const src_ocl_sieve = \
 "}\n" \
 "\n" \
 "// 2^{(p - 1)/2} ?= +/-1 mod p\n" \
-"inline bool prp(const uint64 k, const int n)\n" \
+"inline bool prp(const uint64 k, const int n, const uint64 k_inv, const int k_r)\n" \
 "{\n" \
-"	const int k_r = divmod61_exp(k);\n" \
-"	const uint64 k_inv = divmod61_invert(k, k_r);\n" \
-"\n" \
 "	// e = (p - 1)/2 = k*2^{n - 1}\n" \
 "	uint96 e; e.s0 = k << (n - 1); e.s1 = (uint32)(k >> (64 - (n - 1)));\n" \
 "	int b = ilog2_96(e) - 1;\n" \
@@ -226,45 +223,48 @@ static const char * const src_ocl_sieve = \
 "\n" \
 "__kernel\n" \
 "void generate_primes(__global uint * restrict const prime_count, __global ulong * restrict const k_vector,\n" \
-"	__global ulong2 * restrict const q_vector, __global ulong2 * restrict const one_vector, const ulong i)\n" \
+"	__global ulong2 * restrict const k_ext_vector, const ulong i)\n" \
 "{\n" \
 "	const uint64 k = (i << log2GlobalWorkSize) | get_global_id(0);\n" \
 "\n" \
-"	const int n = gfn_n + 1;\n" \
-"	if (prp(k, n))\n" \
+"	const int k_r = divmod61_exp(k);\n" \
+"	const uint64 k_inv = divmod61_invert(k, k_r);\n" \
+"	if (prp(k, g_n, k_inv, k_r))\n" \
 "	{\n" \
 "		const uint prime_index = atomic_inc(prime_count);\n" \
 "		k_vector[prime_index] = k;\n" \
+"		k_ext_vector[prime_index] = (ulong2)(k_inv, (ulong)(k_r));\n" \
 "	}\n" \
 "}\n" \
 "\n" \
 "__kernel\n" \
 "void init_factors(__global const uint * restrict const prime_count, __global const ulong * restrict const k_vector,\n" \
-"	__global /*const*/ ulong2 * restrict const q_vector, __global const ulong2 * restrict const one_vector,\n" \
-"	__global const char * restrict const _kro_vector,\n" \
+"	__global const ulong2 * restrict const k_ext_vector, __global const char * restrict const _kro_vector,\n" \
 "	__global ulong2 * restrict const c_vector, __global ulong2 * restrict const a2k_vector)\n" \
 "{\n" \
 "	const size_t i = get_global_id(0);\n" \
 "	if (i >= *prime_count) return;\n" \
 "\n" \
 "	const uint64 k = k_vector[i];\n" \
-"	const int n = gfn_n + 1;\n" \
+"	const ulong2 k_ext = k_ext_vector[i];\n" \
+"	const uint64 k_inv = k_ext.s0;\n" \
+"	const int k_r = (int)(k_ext.s1);\n" \
 "\n" \
 "	// p = 1 (mod 4). If a is odd then (a/p) = (p/a) = ({p mod a}/a)\n" \
 "\n" \
 "	uint32 a = 3;\n" \
-"	if (kn_mod(k, n, 3) != 2)\n" \
+"	if (kn_mod(k, g_n, 3) != 2)\n" \
 "	{\n" \
 "		a += 2;\n" \
-"		if (_kro_vector[256 * ((5 - 3) / 2) + kn_mod(k, n, 5)] >= 0)\n" \
+"		if (_kro_vector[256 * ((5 - 3) / 2) + kn_mod(k, g_n, 5)] >= 0)\n" \
 "		{\n" \
 "			a += 2;\n" \
-"			if (_kro_vector[256 * ((7 - 3) / 2) + kn_mod(k, n, 7)] >= 0)\n" \
+"			if (_kro_vector[256 * ((7 - 3) / 2) + kn_mod(k, g_n, 7)] >= 0)\n" \
 "			{\n" \
 "				a += 4;\n" \
 "				while (a < 256)\n" \
 "				{\n" \
-"					if (_kro_vector[256 * ((a - 3) / 2) + kn_mod(k, n, a)] < 0) break;\n" \
+"					if (_kro_vector[256 * ((a - 3) / 2) + kn_mod(k, g_n, a)] < 0) break;\n" \
 "					a += 2;\n" \
 "				}\n" \
 "				if (a >= 256)\n" \
@@ -276,11 +276,9 @@ static const char * const src_ocl_sieve = \
 "		}\n" \
 "	}\n" \
 "\n" \
-"	const int k_r = divmod61_exp(k);\n" \
-"	const uint64 k_inv = divmod61_invert(k, k_r);\n" \
 "	Mod_k c; c.quot = 0; c.rem = a;\n" \
-"	c = pow_mod(c, k, k, n, k_inv, k_r);\n" \
-"	const Mod_k a2k = mul_mod(c, c, k, n, k_inv, k_r);\n" \
+"	c = pow_mod(c, k, k, g_n, k_inv, k_r);\n" \
+"	const Mod_k a2k = mul_mod(c, c, k, g_n, k_inv, k_r);\n" \
 "\n" \
 "	c_vector[i] = (ulong2)(c.rem, c.quot);\n" \
 "	a2k_vector[i] = (ulong2)(a2k.rem, a2k.quot);\n" \
@@ -288,7 +286,7 @@ static const char * const src_ocl_sieve = \
 "\n" \
 "__kernel\n" \
 "void check_factors(__global const uint * restrict const prime_count,\n" \
-"	__global const ulong * restrict const k_vector, __global const ulong2 * restrict const q_vector,\n" \
+"	__global const ulong * restrict const k_vector, __global const ulong2 * restrict const k_ext_vector,\n" \
 "	__global ulong2 * restrict const c_vector, __global const ulong2 * restrict const a2k_vector,\n" \
 "	__global uint * restrict const factor_count, __global ulong2 * restrict const factor)\n" \
 "{\n" \
@@ -296,17 +294,16 @@ static const char * const src_ocl_sieve = \
 "	if (i >= *prime_count) return;\n" \
 "\n" \
 "	const uint64 k = k_vector[i];\n" \
-"	const int n = gfn_n + 1;\n" \
+"	const ulong2 k_ext = k_ext_vector[i];\n" \
+"	const uint64 k_inv = k_ext.s0;\n" \
+"	const int k_r = (int)(k_ext.s1);\n" \
 "\n" \
 "	const ulong2 c_val = c_vector[i];\n" \
 "	Mod_k c; c.rem = c_val.s0; c.quot = (uint32)(c_val.s1);\n" \
 "	const ulong2 a2k_val = a2k_vector[i];\n" \
 "	Mod_k a2k; a2k.rem = a2k_val.s0; a2k.quot = (uint32)(a2k_val.s1);\n" \
 "\n" \
-"	const int k_r = divmod61_exp(k);\n" \
-"	const uint64 k_inv = divmod61_invert(k, k_r);\n" \
-"\n" \
-"	const uint32 N = (uint32)(1) << n;\n" \
+"	const uint32 N = (uint32)(1) << g_n;\n" \
 "	for (size_t i = 0; i < factors_loop; ++i)\n" \
 "	{\n" \
 "		const uint32 parity = ((c.quot & (uint32)(k)) ^ (uint32)(c.rem)) & 1u;\n" \
@@ -320,12 +317,12 @@ static const char * const src_ocl_sieve = \
 "\n" \
 "		if ((c.quot == 0) && (c.rem <= 2000000000u))\n" \
 "		{\n" \
-"			uint128 p; p.s0 = (k << n) | 1; p.s1 = k >> (64 - n);\n" \
+"			uint128 p; p.s0 = (k << g_n) | 1; p.s1 = k >> (64 - g_n);\n" \
 "			const uint factor_index = atomic_inc(factor_count);\n" \
 "			factor[factor_index] = (ulong2)(p.s0, p.s1 | (c.rem << 32));\n" \
 "		}\n" \
 "\n" \
-"		c = mul_mod(c, a2k, k, n, k_inv, k_r);		// c = a^{(2*i + 1).k}\n" \
+"		c = mul_mod(c, a2k, k, g_n, k_inv, k_r);		// c = a^{(2*i + 1).k}\n" \
 "	}\n" \
 "\n" \
 "	c_vector[i] = (ulong2)(c.rem, c.quot);\n" \

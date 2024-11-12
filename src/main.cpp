@@ -43,7 +43,7 @@ private:
 public:
 	application()
 	{
-#if defined(_WIN32)	
+#if defined(_WIN32)
 		SetConsoleCtrlHandler(HandlerRoutine, TRUE);
 #else
 		signal(SIGTERM, quit);
@@ -132,7 +132,7 @@ public:
 		if (args.size() < 3) return;
 
 		// parse args
-		const uint32_t n = (args.size() > 0) ? std::atoi(args[0].c_str()) : 15;	//21;
+		const uint32_t n = (args.size() > 0) ? std::atoi(args[0].c_str()) : 15;	// 23
 		const uint32_t p_min = (args.size() > 1) ? std::atoi(args[1].c_str()) : 100000000;	// 9220000, 100000000
 		const uint32_t p_max = (args.size() > 2) ? std::atoi(args[2].c_str()) : 100000010;	// 9220010, 100000010
 		size_t d = 0;

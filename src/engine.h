@@ -12,7 +12,7 @@ Please give feedback to the authors if improvement is realized. It is distribute
 class engine : public device
 {
 private:
-	cl_mem _k_vector = nullptr, _q_vector = nullptr, _one_vector = nullptr;
+	cl_mem _k_vector = nullptr, _k_ext_vector = nullptr;
 	cl_mem _c_vector = nullptr, _a2k_vector = nullptr, _factor_vector = nullptr;
 	cl_mem _prime_count = nullptr, _factor_count = nullptr;
 	cl_mem _kro_vector = nullptr;
@@ -29,8 +29,7 @@ public:
 		std::cerr << "Alloc gpu memory." << std::endl;
 #endif
 		_k_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong) * prime_size);
-		_q_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
-		_one_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
+		_k_ext_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
 		_c_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
 		_a2k_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * prime_size);
 		_factor_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(cl_ulong2) * factor_size, false);
@@ -46,8 +45,7 @@ public:
 		std::cerr << "Free gpu memory." << std::endl;
 #endif
 		_releaseBuffer(_k_vector);
-		_releaseBuffer(_q_vector);
-		_releaseBuffer(_one_vector);
+		_releaseBuffer(_k_ext_vector);
 		_releaseBuffer(_c_vector);
 		_releaseBuffer(_a2k_vector);
 		_releaseBuffer(_factor_vector);
@@ -65,22 +63,20 @@ public:
 		_generate_primes = _createKernel("generate_primes");
 		_setKernelArg(_generate_primes, 0, sizeof(cl_mem), &_prime_count);
 		_setKernelArg(_generate_primes, 1, sizeof(cl_mem), &_k_vector);
-		_setKernelArg(_generate_primes, 2, sizeof(cl_mem), &_q_vector);
-		_setKernelArg(_generate_primes, 3, sizeof(cl_mem), &_one_vector);
+		_setKernelArg(_generate_primes, 2, sizeof(cl_mem), &_k_ext_vector);
 
 		_init_factors = _createKernel("init_factors");
 		_setKernelArg(_init_factors, 0, sizeof(cl_mem), &_prime_count);
 		_setKernelArg(_init_factors, 1, sizeof(cl_mem), &_k_vector);
-		_setKernelArg(_init_factors, 2, sizeof(cl_mem), &_q_vector);
-		_setKernelArg(_init_factors, 3, sizeof(cl_mem), &_one_vector);
-		_setKernelArg(_init_factors, 4, sizeof(cl_mem), &_kro_vector);
-		_setKernelArg(_init_factors, 5, sizeof(cl_mem), &_c_vector);
-		_setKernelArg(_init_factors, 6, sizeof(cl_mem), &_a2k_vector);
+		_setKernelArg(_init_factors, 2, sizeof(cl_mem), &_k_ext_vector);
+		_setKernelArg(_init_factors, 3, sizeof(cl_mem), &_kro_vector);
+		_setKernelArg(_init_factors, 4, sizeof(cl_mem), &_c_vector);
+		_setKernelArg(_init_factors, 5, sizeof(cl_mem), &_a2k_vector);
 
 		_check_factors = _createKernel("check_factors");
 		_setKernelArg(_check_factors, 0, sizeof(cl_mem), &_prime_count);
 		_setKernelArg(_check_factors, 1, sizeof(cl_mem), &_k_vector);
-		_setKernelArg(_check_factors, 2, sizeof(cl_mem), &_q_vector);
+		_setKernelArg(_check_factors, 2, sizeof(cl_mem), &_k_ext_vector);
 		_setKernelArg(_check_factors, 3, sizeof(cl_mem), &_c_vector);
 		_setKernelArg(_check_factors, 4, sizeof(cl_mem), &_a2k_vector);
 		_setKernelArg(_check_factors, 5, sizeof(cl_mem), &_factor_count);
@@ -114,7 +110,7 @@ public:
 	void generatePrimes(const size_t count, const uint64_t index)
 	{
 		const cl_ulong i = cl_ulong(index);
-		_setKernelArg(_generate_primes, 4, sizeof(cl_ulong), &i);
+		_setKernelArg(_generate_primes, 3, sizeof(cl_ulong), &i);
 		_executeKernel(_generate_primes, count);
 	}
 

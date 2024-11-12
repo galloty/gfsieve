@@ -45,8 +45,8 @@ protected:
 	uint32_t _n = 0;
 	static constexpr size_t _factorsLoop = size_t(1) << 10u;
 	size_t _savedCount = 0;
-	int _log2GlobalWorkSize = 18;
-	size_t _localWorkSize = 0;
+	static constexpr int _log2GlobalWorkSize = 22;
+	static constexpr size_t _localWorkSize = 0;
 	timer::time _startTime;
 	std::string _extension;
 	std::vector<cl_ulong2> _factor;
@@ -98,7 +98,7 @@ private:
 	{
 		std::stringstream src;
 		src << "#define\tlog2GlobalWorkSize\t" << log2Global << std::endl;
-		src << "#define\tgfn_n\t" << _n << std::endl;
+		src << "#define\tg_n\t" << _n + 1 << std::endl;
 		src << "#define\tfactors_loop\t" << _factorsLoop << std::endl;
 		src << std::endl;
 
@@ -140,15 +140,20 @@ private:
 	}
 
 private:
-	void readFactors(engine & eng)
+	void readFactors(engine & eng, const double dp)
 	{
 		const size_t factorCount = eng.readFactorCount();
 		const double elapsedTime = timer::diffTime(timer::currentTime(), _startTime);
 
 		if (factorCount >= _factorSize) throw std::runtime_error("factor count is too large");
 
-		const std::string runtime = timer::formatTime(elapsedTime);
-		std::cout << factorCount << " factors, time = " << runtime << std::endl;
+		std::cout << factorCount << " factors";
+		if (elapsedTime > 10)
+		{
+			std::cout << ", " << std::max(int(86400 / 1e15 * dp / elapsedTime), 1) << "P/day, time = " << timer::formatTime(elapsedTime);
+		}
+		else std::cout << "                      ";
+		std::cout << std::endl;
 
 		if (_savedCount != factorCount)
 		{
@@ -158,8 +163,9 @@ private:
 	}
 
 private:
-	void printFactors(const uint64_t cnt)
+	bool recordFactors()
 	{
+		bool success = false;
 		mpz_t zp, zr, zt; mpz_inits(zp, zr, zt, nullptr);
 
 		const size_t factorCount = _factor.size();
@@ -213,28 +219,32 @@ private:
 				}
 				resFile.close();
 				_savedCount = factorCount;
-
-				const std::string ctxFilename = std::string("ctx") + _extension;
-				std::ofstream ctxFile(ctxFilename);
-				if (ctxFile.is_open())
-				{
-					ctxFile << cnt << " " << _log2GlobalWorkSize << " " << _localWorkSize << std::endl;
-					ctxFile.close();
-				}
+				success = true;
 			}
 		}
 
 		mpz_clears(zp, zr, zt, nullptr);
+		return success;
 	}
 
 private:
-	void saveFactors(engine & eng, const uint64_t cnt)
+	void saveFactors(engine & eng, const uint64_t cnt, const double dp)
 	{
-		readFactors(eng);
-		printFactors(cnt);
+		readFactors(eng, dp);
+		if (recordFactors())
+		{
+			const std::string ctxFilename = std::string("ctx") + _extension;
+			std::ofstream ctxFile(ctxFilename);
+			if (ctxFile.is_open())
+			{
+				// ctxFile << cnt << " " << _log2GlobalWorkSize << " " << _localWorkSize << std::endl;
+				ctxFile << cnt << std::endl;
+				ctxFile.close();
+			}
+		}
 	}
 
-private:
+/*private:
 	double autoTuning(engine & eng, const uint32_t p_min)
 	{
 		std::cout << " auto-tuning...\r";
@@ -282,20 +292,20 @@ private:
 			<< (size_t(1) << _log2GlobalWorkSize) << ", localWorkSize = " << _localWorkSize << ")";
 		std::cout << ss.str() << std::endl;
 		return pTime;
-	}
+	}*/
 
 public:
 	bool check(engine & eng, const uint32_t n, const uint32_t p_min, const uint32_t p_max, const bool display)
 	{
 		_64bit = (p_max + 1 <= size_t(-1) / _unit);
 		_display = display;
-		_factorSize = (p_min >= 8) ? (size_t(1) << 24) : (size_t(1) << 26);
+		_factorSize = (p_min >= 8) ? (size_t(1) << 24) : (size_t(1) << 26);		// 2^26: 512MB
 		_n = n;
 		_savedCount = 0;
 		std::stringstream ss; ss << n << "_" << p_min << "_" << p_max << ".txt";
 		_extension = ss.str();
 
-		std::cout << (_64bit ? "64" : "96") << "-bit mode" << std::endl;
+		std::cout << (_64bit ? 64 : 61 + n + 1) << "-bit mode" << std::endl;
 
 		uint64_t cnt = 0;
 		const std::string ctxFilename = std::string("ctx") + _extension;
@@ -303,17 +313,17 @@ public:
 		if (ctxFile.is_open())
 		{
 			ctxFile >> cnt;
-			ctxFile >> _log2GlobalWorkSize;
-			ctxFile >> _localWorkSize;
+			// ctxFile >> _log2GlobalWorkSize;
+			// ctxFile >> _localWorkSize;
 			ctxFile.close();
 		}
 
-		if (cnt == 0)
+		/*if (cnt == 0)
 		{
 			const double pTime = autoTuning(eng, p_min);
 			const std::string estimatedTime = timer::formatTime(pTime * (p_max - p_min));
 			std::cout << "Estimated time: " << estimatedTime << std::endl;
-		}
+		}*/
 
 		eng.setProfiling(false);
 		initEngine(eng, _log2GlobalWorkSize);
@@ -325,8 +335,8 @@ public:
 
 		mpz_t zp_min, zp_max; mpz_inits(zp_min, zp_max, nullptr);
 
-		const uint64_t i = i_min + cnt;
-		mpz_set_ui(zp_min, uint32_t(i >> 32)); mpz_mul_2exp(zp_min, zp_min, 32); mpz_add_ui(zp_min, zp_min, uint32_t(i));
+		const uint64_t i_start = i_min + cnt;
+		mpz_set_ui(zp_min, uint32_t(i_start >> 32)); mpz_mul_2exp(zp_min, zp_min, 32); mpz_add_ui(zp_min, zp_min, uint32_t(i_start));
 		mpz_mul_2exp(zp_min, zp_min, _log2GlobalWorkSize + _n + 1);
 		mpz_add_ui(zp_min, zp_min, 1);
 
@@ -336,8 +346,7 @@ public:
 		mpz_mul_2exp(zp_max, zp_max, _n + 1);
 		mpz_add_ui(zp_max, zp_max, 1);
 
-		char p_min_str[32]; mpz_get_str(p_min_str, 10, zp_min);
-		char p_max_str[32]; mpz_get_str(p_max_str, 10, zp_max);
+		char p_min_str[32], p_max_str[32]; mpz_get_str(p_min_str, 10, zp_min); mpz_get_str(p_max_str, 10, zp_max);
 		std::cout << ((cnt != 0) ? "Resuming from a checkpoint, t" : "T") << "esting n = " << _n << " from " << p_min_str << " to " << p_max_str << std::endl;
 
 		mpz_clears(zp_min, zp_max, nullptr);
@@ -347,17 +356,18 @@ public:
 
 		const size_t globalWorkSize = size_t(1) << _log2GlobalWorkSize, localWorkSize = _localWorkSize;
 
-		for (uint64_t i = i_min + cnt; i < i_max; ++i)
+		// i * globalWorkSize * 2^{n + 1} + 1 <= p < (i + 1) * globalWorkSize * 2^{n + 1} + 1
+		for (uint64_t i = i_start; i < i_max; ++i)
 		{
 			if (_quit) break;
 
 			eng.generatePrimes(globalWorkSize, i);
 			// const size_t primeCount = eng.readPrimeCount();
-			// std::cout << primeCount << " primes" << std::endl;
+			// std::cout << i << ": " << primeCount << " primes" << std::endl;
 			eng.initFactors(globalWorkSize);
 			eng.checkFactors(globalWorkSize, N_2_factors_loop, localWorkSize);
 			// const size_t factorCount = eng.readFactorCount();
-			// std::cout << factorCount << " factors" << std::endl;
+			// std::cout << factorCount << " factor(s)" << std::endl;
 			eng.clearPrimes();
 			++cnt;
 
@@ -373,14 +383,14 @@ public:
 			if (timer::diffTime(currentTime, recordTime) > 300)
 			{
 				recordTime = currentTime;
-				saveFactors(eng, cnt);
+				saveFactors(eng, cnt, (i - i_start) * pow(2.0, double(n + 1 + _log2GlobalWorkSize)));
 			}
 		}
 
 		if (cnt > 0)
 		{
 			std::cout << " terminating...         \r";
-			saveFactors(eng, cnt);
+			saveFactors(eng, cnt, (i_max - i_start) * pow(2.0, double(n + 1 + _log2GlobalWorkSize)));
 		}
 
 		// eng.displayProfiles(1);
