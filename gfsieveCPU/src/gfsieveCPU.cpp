@@ -1,7 +1,7 @@
 /*
-Copyright 2023, Yves Gallot
+Copyright 2020, Yves Gallot
 
-ctwin is free source code, under the MIT license (see LICENSE). You can redistribute, use and/or modify it.
+gfsieve is free source code, under the MIT license (see LICENSE). You can redistribute, use and/or modify it.
 Please give feedback to the authors if improvement is realized. It is distributed in the hope that it will be useful.
 */
 
@@ -277,7 +277,7 @@ static std::string header()
 
 	std::ostringstream ss;
 	ss << "gfsieveCPU 25.1.0 " << sysver << ssc.str() << std::endl;
-	ss << "Copyright (c) 2025, Yves Gallot" << std::endl;
+	ss << "Copyright (c) 2020, Yves Gallot" << std::endl;
 	ss << "gfsieve is free source code, under the MIT license." << std::endl << std::endl;
 	return ss.str();
 }
