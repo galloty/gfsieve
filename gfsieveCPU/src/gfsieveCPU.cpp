@@ -249,6 +249,87 @@ public:
 	}
 };
 
+class Wheel
+{
+private:
+	static const size_t prime_count = 8 * 1024;		// largest prime is 84047
+	static const uint32_t sieve_size = 128 * 1024;
+
+	const int _n;
+	uint32_t _j;
+	uint64_t _k;
+	uint32_t _prm[prime_count];		// 32K
+	uint32_t _j_ptr[prime_count];	// 32K
+	bool _sieve[sieve_size];		// 128K
+
+	void fill_sieve()
+	{
+		for (size_t j = 0; j < sieve_size; ++j) _sieve[j] = false;
+		for (size_t i = 0; i < prime_count; ++i)
+		{
+			uint32_t p = _prm[i], j = _j_ptr[i]; for (; j < sieve_size; j += p) _sieve[j] = true;
+			_j_ptr[i] = j - sieve_size;
+		}
+	}
+
+public:
+	// k * 2^n + 1
+	Wheel(const int n) : _n(n), _j(0), _k(0)
+	{
+		_prm[0] = 3; _prm[1] = 5; _prm[2] = 7;
+		size_t i = 3;
+		for (uint32_t p = 11; i < prime_count; p += 2)
+		{
+			const uint32_t s = uint32_t(std::sqrt(double(p))) + 1;
+			uint32_t d; for (d = 3; d <= s; d += 2) if (p % d == 0) break;
+			if (d > s) { _prm[i] = p; ++i; }
+		}
+
+		// std::cout << _prm[prime_count - 1] << std::endl;
+	}
+
+	virtual ~Wheel() {}
+
+	void init(const uint64_t k)
+	{
+		_j = uint32_t(k % sieve_size); _k = k - _j;
+
+		const int n = _n;
+		for (size_t i = 0; i < prime_count; ++i)
+		{
+			uint32_t p = _prm[i], j = 0; while ((((_k + j) << n) + 1) % p != 0) ++j;
+			if (j >= sieve_size) throw std::runtime_error("Wheel::init failed.");
+			_j_ptr[i] = j;
+		}
+
+		fill_sieve();
+	}
+
+	uint64_t get()
+	{
+		do
+		{
+			while (_j < sieve_size)
+			{
+				const bool found = !_sieve[_j];
+				const uint64_t k = _k + _j;
+				++_j;
+				if (found) return k;
+			}
+
+			fill_sieve();
+			_j = 0;
+			_k += sieve_size;
+		}
+		while (_k >= sieve_size);
+
+		_k = 0;
+		return 0;
+	}
+
+	// void back() { if (_j == 0) std::cout << "error" << std::endl; --_j; }
+};
+
 static std::string header()
 {
 	const char * const sysver =
@@ -291,17 +372,6 @@ static std::string usage()
 	return ss.str();
 }
 
-inline std::string uint2string(const uint64_t n)
-{
-	double f = double(n); std::string prefix;
-	if (f >= 1e15) { f *= 1e-15; prefix = "P"; }
-	else if (f >= 1e12) { f *= 1e-12; prefix = "T"; }
-	else if (f >= 1e9) { f *= 1e-9; prefix = "G"; }
-	else if (f >= 1e6) { f *= 1e-6; prefix = "M"; }
-	else return std::to_string(n);
-	return std::to_string(f).substr(0, 5) + prefix;
-}
-
 class Sieve
 {
 private:
@@ -309,9 +379,9 @@ private:
 	const uint64_t _b_min, _b_max;
 	std::vector<bool> _bsieve;
 	uint64_t _p_min;
-	inline static volatile bool _quit = false;
+	inline static volatile bool _quit = false, _start = true;
 	std::string _filename;
-	std::chrono::high_resolution_clock::time_point _display_time, _record_time;
+	std::chrono::high_resolution_clock::time_point _display_time, _record_time, _start_time;
 
 private:
 	static void quit(int) { _quit = true; }
@@ -345,12 +415,23 @@ private:
 	std::string get_sieve_filename() const { return "sv" + _filename + ".dat"; }
 	std::string get_cand_filename() const { return "cand" + _filename + ".txt"; }
 
+	static std::string uint2string(const uint64_t n)
+	{
+		double f = double(n); std::string prefix;
+		if (f >= 1e15) { f *= 1e-15; prefix = "P"; }
+		else if (f >= 1e12) { f *= 1e-12; prefix = "T"; }
+		else if (f >= 1e9) { f *= 1e-9; prefix = "G"; }
+		else if (f >= 1e6) { f *= 1e-6; prefix = "M"; }
+		else return std::to_string(n);
+		return std::to_string(f).substr(0, 5) + prefix;
+	}
+
 	// Rosetta Code, CRC-32, C
 	static uint32_t rc_crc32(const uint32_t crc32, const char * const buf, const size_t len)
 	{
 		static uint32_t table[256];
 		static bool have_table = false;
-	
+
 		// This check is not thread safe; there is no mutex
 		if (!have_table)
 		{
@@ -480,11 +561,12 @@ private:
 	bool monitor()
 	{
 		const bool quit = _quit;
-		auto now = std::chrono::high_resolution_clock::now();
+		const auto now = std::chrono::high_resolution_clock::now();
+		if (_start) { _start = false; _start_time = now; }
 		if (quit || (std::chrono::duration<double>(now - _display_time).count() > 1))
 		{
 			_display_time = now;
-			std::cout << uint2string(_p_min) << "\r";
+			std::cout << std::lrint(std::chrono::duration<double>(now - _start_time).count()) << ": " << uint2string(_p_min) << "\r";
 			if (quit || (std::chrono::duration<double>(now - _record_time).count() > 5 * 60))
 			{
 				_record_time = now;
@@ -534,38 +616,95 @@ public:
 
 		std::cout << "n = " << n << ", b in [" << b_min << ", " << b_max << "]." << std::endl;
 
-		if (!read()) _p_min = (1ul << (n + 1)) + 1;
+		if (!read()) _p_min = (1ull << (n + 1)) + 1;
 
-		const uint64_t k_min = _p_min >> (n + 1), k_max = uint64_t(-1) >> (n + 1);
+		const uint64_t k_min = _p_min >> (n + 1);
 
 		if (!init()) return;
 
-		for (uint64_t k = k_min; k <= k_max; ++k)
+		// auto start = std::chrono::high_resolution_clock::now();
+		// size_t count = 0, countx = 0;
+
+		// Bench prp test
+		// for (uint64_t k = k_min; true; ++k)
+		// {
+		// 	const uint64_t p = (k << (n + 1)) + 1;
+
+		// 	if ((p % 3 == 0) || (p % 5 == 0) || (p % 7 == 0) || (p % 11 == 0) || (p % 13 == 0) || (p % 17 == 0)
+		// 		|| (p % 19 == 0) || (p % 23 == 0) || (p % 29 == 0) || (p % 31 == 0)) continue;
+
+		// 	const MpArith mp(p);
+
+		// 	if (mp.prp())
+		// 	{
+		// 		++count;
+		// 		if (count % 1048576 == 0) std::cout << std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - start).count() << ": " << p << std::endl;
+		// 	}
+		// }
+
+		Wheel wheel(n + 1);
+		wheel.init(k_min);
+
+		// Bench wheel
+		// for (uint64_t k = wheel.get(); true; k = wheel.get())
+		// {
+		// 	const uint64_t p = (k << (n + 1)) + 1;
+		// 	++count;
+		// 	if (count % 1048576 == 0) std::cout << std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - start).count() << ": " << p << std::endl;
+		// }
+
+		// Check wheel
+// 		for (uint64_t k = k_min; true; ++k)
+// 		{
+// 			const uint64_t p = (k << (n + 1)) + 1;
+
+// 			if ((p % 3 == 0) || (p % 5 == 0) || (p % 7 == 0) || (p % 11 == 0) || (p % 13 == 0) || (p % 17 == 0)
+// 				|| (p % 19 == 0) || (p % 23 == 0) || (p % 29 == 0) || (p % 31 == 0)) continue;
+
+// 			const MpArith mp(p);
+
+// 			if (mp.prp())
+// 			{
+// 				++count;
+// again:
+// 				const uint64_t k = wheel.get(), px = (k << (n + 1)) + 1;
+// 				if (p != px)
+// 				{
+// 					const bool p_prime = Mod(p).isprime(), px_prime = Mod(px).isprime();
+// 					if (p_prime && px_prime) { std::cout << p << ", " << px << std::endl; exit(0); }
+// 					else if (p_prime) { ++countx; /*std::cout << countx / double(count) << std::endl;*/ goto again; }
+// 					else if (px_prime) { std::cout << p << ", " << px << " (prime), " << k << std::endl; wheel.back(); }
+// 					else std::cout << p << ", " << px << ", " << k << std::endl;
+// 				}
+// 			}
+// 		}
+
+		for (uint64_t k = wheel.get(); k != 0; k = wheel.get())
 		{
 			const uint64_t p = (k << (n + 1)) + 1;
-
-			if ((p % 3 == 0) || (p % 5 == 0) || (p % 7 == 0) || (p % 11 == 0) || (p % 13 == 0) || (p % 17 == 0)
-				|| (p % 19 == 0) || (p % 23 == 0) || (p % 29 == 0) || (p % 31 == 0)) continue;
 
 			const MpArith mp(p);
 
 			if (mp.prp())
 			{
 				uint64_t a = 3, ma = mp.three();
-				while (jacobi(a, p) != -1) { ++a; ma = mp.add(ma, mp.one()); if (a == 256) { std::cout << p << std::endl; break; } }
+				while (jacobi(a, p) != -1) { ++a; ma = mp.add(ma, mp.one()); if (a == 256) break; }
 
-				const uint64_t c = mp.pow(ma, k), b2 = mp.mul(c, c);
-				uint64_t b = mp.toInt(c);
-
-				for (uint64_t i = 0; i < (uint64_t(1) << (n - 1)); ++i)
+				if (a < 256)
 				{
-					const uint64_t beven = (b % 2 == 0) ? b : p - b;
-					if (!check_root(beven, b_min, b_max, p, n)) break;
-					b = mp.mul(b, b2);
-				}
+					const uint64_t c = mp.pow(ma, k), b2 = mp.mul(c, c);
+					uint64_t b = mp.toInt(c);
 
-				_p_min = p;
-				if (!monitor()) return;
+					for (uint64_t i = 0; i < (uint64_t(1) << (n - 1)); ++i)
+					{
+						const uint64_t beven = (b % 2 == 0) ? b : p - b;
+						if (!check_root(beven, b_min, b_max, p, n)) break;
+						b = mp.mul(b, b2);
+					}
+
+					_p_min = p;
+					if (!monitor()) return;
+				}
 			}
 		}
 	}
