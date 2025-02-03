@@ -326,8 +326,6 @@ public:
 		_k = 0;
 		return 0;
 	}
-
-	// void back() { if (_j == 0) std::cout << "error" << std::endl; --_j; }
 };
 
 static std::string header()
@@ -379,7 +377,7 @@ private:
 	const uint64_t _b_min, _b_max;
 	std::vector<bool> _bsieve;
 	uint64_t _p_min;
-	inline static volatile bool _quit = false, _start = true;
+	inline static volatile bool _quit = false;
 	std::string _filename;
 	std::chrono::high_resolution_clock::time_point _display_time, _record_time, _start_time;
 
@@ -554,7 +552,7 @@ private:
 
 	bool init()
 	{
-		_display_time = _record_time = std::chrono::high_resolution_clock::now();
+		_display_time = _record_time = _start_time = std::chrono::high_resolution_clock::now();
 		return !_quit;
 	}
 
@@ -562,7 +560,6 @@ private:
 	{
 		const bool quit = _quit;
 		const auto now = std::chrono::high_resolution_clock::now();
-		if (_start) { _start = false; _start_time = now; }
 		if (quit || (std::chrono::duration<double>(now - _display_time).count() > 1))
 		{
 			_display_time = now;
@@ -576,33 +573,35 @@ private:
 		return !quit;
 	}
 
-	bool check_root(const uint64_t b, const uint64_t b_min, const uint64_t b_max, const uint64_t p, const int n)
+	bool check_root(const uint64_t b, const uint64_t b_min, const uint64_t p, const int n)
 	{
-		for (uint64_t s = b; s <= b_max; s += p)
+		const size_t i = (b - b_min) / 2;
+		if (!_bsieve[i])
+		{
+			const Mod mod(p);
+			if (mod.pow(b, 1 << n) == p - 1)
+			{
+				_bsieve[i] = true;
+				// std::ofstream resFile("res.txt", std::ios::app); if (resFile.is_open()) { resFile << p << " " << b << std::endl; resFile.close(); }
+			}
+			// May fail if p is not prime
+			else if (mod.isprime())
+			{
+				std::ostringstream ss; ss << "Calculation error (check): p = " << p << ", b = " << b << ".";
+				throw std::runtime_error(ss.str());
+			}
+			else return false;
+		}
+		return true;
+	}
+
+	bool check_roots(const uint64_t b, const uint64_t b_min, const uint64_t b_max, const uint64_t p, const int n)
+	{
+		for (uint64_t s = b; s <= b_max; s += 2 * p)
 		{
 			if (s >= b_min)
 			{
-				if (!_bsieve[(s - b_min) / 2])
-				{
-					const Mod mod(p);
-					if (mod.pow(s, 1 << n) == p - 1)
-					{
-						_bsieve[(s - b_min) / 2] = true;
-						// std::ofstream resFile("res.txt", std::ios::app);
-						// if (resFile.is_open())
-						// {
-						// 	resFile << p << " " << s << std::endl;
-						// 	resFile.close();
-						// }
-					}
-					// May fail if p is not prime
-					else if (mod.isprime())
-					{
-						std::ostringstream ss; ss << "Calculation error (check): p = " << p << ", b = " << s << ".";
-						throw std::runtime_error(ss.str());
-					}
-					else return false;
-				}
+				if (!check_root(s, b_min, p, n)) return false;
 			}
 		}
 		return true;
@@ -622,62 +621,8 @@ public:
 
 		if (!init()) return;
 
-		// auto start = std::chrono::high_resolution_clock::now();
-		// size_t count = 0, countx = 0;
-
-		// Bench prp test
-		// for (uint64_t k = k_min; true; ++k)
-		// {
-		// 	const uint64_t p = (k << (n + 1)) + 1;
-
-		// 	if ((p % 3 == 0) || (p % 5 == 0) || (p % 7 == 0) || (p % 11 == 0) || (p % 13 == 0) || (p % 17 == 0)
-		// 		|| (p % 19 == 0) || (p % 23 == 0) || (p % 29 == 0) || (p % 31 == 0)) continue;
-
-		// 	const MpArith mp(p);
-
-		// 	if (mp.prp())
-		// 	{
-		// 		++count;
-		// 		if (count % 1048576 == 0) std::cout << std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - start).count() << ": " << p << std::endl;
-		// 	}
-		// }
-
 		Wheel wheel(n + 1);
 		wheel.init(k_min);
-
-		// Bench wheel
-		// for (uint64_t k = wheel.get(); true; k = wheel.get())
-		// {
-		// 	const uint64_t p = (k << (n + 1)) + 1;
-		// 	++count;
-		// 	if (count % 1048576 == 0) std::cout << std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - start).count() << ": " << p << std::endl;
-		// }
-
-		// Check wheel
-// 		for (uint64_t k = k_min; true; ++k)
-// 		{
-// 			const uint64_t p = (k << (n + 1)) + 1;
-
-// 			if ((p % 3 == 0) || (p % 5 == 0) || (p % 7 == 0) || (p % 11 == 0) || (p % 13 == 0) || (p % 17 == 0)
-// 				|| (p % 19 == 0) || (p % 23 == 0) || (p % 29 == 0) || (p % 31 == 0)) continue;
-
-// 			const MpArith mp(p);
-
-// 			if (mp.prp())
-// 			{
-// 				++count;
-// again:
-// 				const uint64_t k = wheel.get(), px = (k << (n + 1)) + 1;
-// 				if (p != px)
-// 				{
-// 					const bool p_prime = Mod(p).isprime(), px_prime = Mod(px).isprime();
-// 					if (p_prime && px_prime) { std::cout << p << ", " << px << std::endl; exit(0); }
-// 					else if (p_prime) { ++countx; /*std::cout << countx / double(count) << std::endl;*/ goto again; }
-// 					else if (px_prime) { std::cout << p << ", " << px << " (prime), " << k << std::endl; wheel.back(); }
-// 					else std::cout << p << ", " << px << ", " << k << std::endl;
-// 				}
-// 			}
-// 		}
 
 		for (uint64_t k = wheel.get(); k != 0; k = wheel.get())
 		{
@@ -695,11 +640,27 @@ public:
 					const uint64_t c = mp.pow(ma, k), b2 = mp.mul(c, c);
 					uint64_t b = mp.toInt(c);
 
-					for (uint64_t i = 0; i < (uint64_t(1) << (n - 1)); ++i)
+					if (p <= b_max)
 					{
-						const uint64_t beven = (b % 2 == 0) ? b : p - b;
-						if (!check_root(beven, b_min, b_max, p, n)) break;
-						b = mp.mul(b, b2);
+						for (uint64_t i = 0; i < (uint64_t(1) << (n - 1)); ++i)
+						{
+							const uint64_t beven = (b % 2 == 0) ? b : p - b;			// 0 <= b_even < p
+							if (!check_roots(beven, b_min, b_max, p, n)) break;
+							if (!check_roots(2 * p - beven, b_min, b_max, p, n)) break;	// p < 2p - b_even <= 2p
+							b = mp.mul(b, b2);
+						}
+					}
+					else
+					{
+						for (uint64_t i = 0; i < (uint64_t(1) << (n - 1)); ++i)
+						{
+							const uint64_t beven = (b % 2 == 0) ? b : p - b;
+							if ((beven >= b_min) && (beven <= b_max))
+							{
+								if (!check_root(beven, b_min, p, n)) break;
+							}
+							b = mp.mul(b, b2);
+						}
 					}
 
 					_p_min = p;
