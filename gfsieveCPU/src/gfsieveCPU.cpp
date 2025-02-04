@@ -14,6 +14,9 @@ Please give feedback to the authors if improvement is realized. It is distribute
 #include <string>
 #include <cmath>
 #include <vector>
+#include <queue>
+#include <thread>
+#include <mutex>
 #include <chrono>
 #include <sys/stat.h>
 #if defined(_WIN32)
@@ -157,9 +160,8 @@ public:
 class MpArith
 {
 private:
-	const uint64_t _p, _q;
-	const uint64_t _one;	// 2^64 mod p
-	const uint64_t _r2;		// (2^64)^2 mod p
+	uint64_t _p, _q;
+	uint64_t _one, _r2;	// 2^64 mod p and (2^64)^2 mod p
 
 private:
 	static constexpr int ilog2(const uint64_t x) { return 63 - __builtin_clzll(x); }
@@ -195,7 +197,12 @@ private:
 	}
 
 public:
-	MpArith(const uint64_t p) : _p(p), _q(invert(p)), _one((-p) % p), _r2(two_pow_64()) { }
+	MpArith() : _p(0), _q(0), _one(0), _r2(0) {}
+	MpArith(const uint64_t p) : _p(p), _q(invert(p)), _one((-p) % p), _r2(two_pow_64()) {}
+	MpArith(const MpArith & rhs) : _p(rhs._p), _q(rhs._q), _one(rhs._one), _r2(rhs._r2) {}
+	MpArith & operator=(const MpArith & rhs) { _p = rhs._p; _q = rhs._q; _one = rhs._one, _r2 = rhs._r2; return *this; }
+
+	uint64_t p() const { return _p; }
 
 	uint64_t toMp(const uint64_t n) const { return mul(n, _r2); }
 	uint64_t toInt(const uint64_t r) const { return REDCshort(r); }
@@ -249,82 +256,51 @@ public:
 	}
 };
 
-class Wheel
+template<typename T>
+class Fifo
 {
 private:
-	static const size_t prime_count = 8 * 1024;		// largest prime is 84047
-	static const uint32_t sieve_size = 128 * 1024;
+	static const size_t max_queue_size = 128;
 
-	const int _n;
-	uint32_t _j;
-	uint64_t _k;
-	uint32_t _prm[prime_count];		// 32K
-	uint32_t _j_ptr[prime_count];	// 32K
-	bool _sieve[sieve_size];		// 128K
-
-	void fill_sieve()
-	{
-		for (size_t j = 0; j < sieve_size; ++j) _sieve[j] = false;
-		for (size_t i = 0; i < prime_count; ++i)
-		{
-			uint32_t p = _prm[i], j = _j_ptr[i]; for (; j < sieve_size; j += p) _sieve[j] = true;
-			_j_ptr[i] = j - sieve_size;
-		}
-	}
+	std::mutex _mutex;
+	std::queue<T> _queue;
+	bool _end = false;
 
 public:
-	// k * 2^n + 1
-	Wheel(const int n) : _n(n), _j(0), _k(0)
-	{
-		_prm[0] = 3; _prm[1] = 5; _prm[2] = 7;
-		size_t i = 3;
-		for (uint32_t p = 11; i < prime_count; p += 2)
-		{
-			const uint32_t s = uint32_t(std::sqrt(double(p))) + 1;
-			uint32_t d; for (d = 3; d <= s; d += 2) if (p % d == 0) break;
-			if (d > s) { _prm[i] = p; ++i; }
-		}
+	void end() { std::lock_guard<std::mutex> guard(_mutex); _end = true; }
 
-		// std::cout << _prm[prime_count - 1] << std::endl;
+	void push(const T & val)
+	{
+		_mutex.lock();
+		while (_queue.size() >= max_queue_size)
+		{
+			_mutex.unlock();
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			_mutex.lock();
+		}
+		_queue.push(val);
+		_mutex.unlock();
 	}
 
-	virtual ~Wheel() {}
-
-	void init(const uint64_t k)
+	bool pop(T & val)
 	{
-		_j = uint32_t(k % sieve_size); _k = k - _j;
-
-		const int n = _n;
-		for (size_t i = 0; i < prime_count; ++i)
+		_mutex.lock();
+		while (_queue.empty())
 		{
-			uint32_t p = _prm[i], j = 0; while ((((_k + j) << n) + 1) % p != 0) ++j;
-			if (j >= sieve_size) throw std::runtime_error("Wheel::init failed.");
-			_j_ptr[i] = j;
-		}
-
-		fill_sieve();
-	}
-
-	uint64_t get()
-	{
-		do
-		{
-			while (_j < sieve_size)
+			if (_end)
 			{
-				const bool found = !_sieve[_j];
-				const uint64_t k = _k + _j;
-				++_j;
-				if (found) return k;
+				_mutex.unlock();
+				return false;
 			}
-
-			fill_sieve();
-			_j = 0;
-			_k += sieve_size;
+			_mutex.unlock();
+			std::cout << "Warning: empty FIFO." << std::endl;
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+			_mutex.lock();
 		}
-		while (_k >= sieve_size);
-
-		_k = 0;
-		return 0;
+		val = _queue.front();
+		_queue.pop();
+		_mutex.unlock();
+		return true;
 	}
 };
 
@@ -380,6 +356,16 @@ private:
 	inline static volatile bool _quit = false;
 	std::string _filename;
 	std::chrono::high_resolution_clock::time_point _display_time, _record_time, _start_time;
+
+	static const size_t karray_size = 1024;
+	struct kArray { uint64_t k[karray_size]; };
+
+	static const size_t parray_size = 1024;
+	struct Mpbb2  { MpArith mp; uint64_t b; uint64_t b2; };
+	struct pArray { Mpbb2 mpbb2[parray_size]; };
+
+	Fifo<kArray> _kqueue;	//	512KB
+	Fifo<pArray> _pqueue;	//	3MB
 
 private:
 	static void quit(int) { _quit = true; }
@@ -607,6 +593,114 @@ private:
 		return true;
 	}
 
+	void gen_k()
+	{
+		const int n = _n;
+		const uint64_t k_min = _p_min >> (n + 1);
+
+		static const size_t wheel_prime_count = 8 * 1024;		// largest prime is 84047
+		static const uint32_t wheel_sieve_size = 128 * 1024;
+		uint32_t wheel_prm[wheel_prime_count];		// 32K
+		uint32_t wheel_j_ptr[wheel_prime_count];	// 32K
+		bool wheel_sieve[wheel_sieve_size];			// 128K
+
+		wheel_prm[0] = 3; wheel_prm[1] = 5; wheel_prm[2] = 7;
+		size_t i = 3;
+		for (uint32_t p = 11; i < wheel_prime_count; p += 2)
+		{
+			const uint32_t s = uint32_t(std::sqrt(double(p))) + 1;
+			uint32_t d; for (d = 3; d <= s; d += 2) if (p % d == 0) break;
+			if (d > s) { wheel_prm[i] = p; ++i; }
+		}
+
+		// std::cout << _wheel_prm[wheel_prime_count - 1] << std::endl;
+
+		uint32_t wheel_j = uint32_t(k_min % wheel_sieve_size);
+		uint64_t wheel_k = k_min - wheel_j;
+
+		for (size_t i = 0; i < wheel_prime_count; ++i)
+		{
+			uint32_t p = wheel_prm[i], j = 0; while ((((wheel_k + j) << (n + 1)) + 1) % p != 0) ++j;
+			if (j >= wheel_sieve_size) throw std::runtime_error("Wheel::init failed.");
+			wheel_j_ptr[i] = j;
+		}
+
+		kArray karray;
+		size_t j = 0;
+
+		do
+		{
+			for (size_t j = 0; j < wheel_sieve_size; ++j) wheel_sieve[j] = false;
+
+			for (size_t i = 0; i < wheel_prime_count; ++i)
+			{
+				uint32_t p = wheel_prm[i], j = wheel_j_ptr[i]; for (; j < wheel_sieve_size; j += p) wheel_sieve[j] = true;
+				wheel_j_ptr[i] = j - wheel_sieve_size;
+			}
+
+			do
+			{
+				if (!wheel_sieve[wheel_j])
+				{
+					karray.k[j] = wheel_k + wheel_j;
+					j = (j + 1) % karray_size;
+					if (j == 0) _kqueue.push(karray);
+				}
+				++wheel_j;
+			}
+			while (wheel_j < wheel_sieve_size);
+
+			wheel_j = 0;
+			wheel_k += wheel_sieve_size;
+		}
+		while (wheel_k >= wheel_sieve_size);
+
+		karray.k[j] = 0;
+		_kqueue.push(karray);
+		_kqueue.end();
+	}
+
+	void gen_p()
+	{
+		const int n = _n;
+
+		pArray parray;
+		size_t i = 0;
+
+		kArray karray;
+		while (_kqueue.pop(karray))
+		{
+			for (size_t j = 0; j < karray_size; ++j)
+			{
+				const uint64_t k = karray.k[j];
+				if (k == 0) break;
+
+				const uint64_t p = (k << (n + 1)) + 1;
+				const MpArith mp(p);
+
+				if (mp.prp())
+				{
+					uint64_t a = 3, ma = mp.three();
+					while (jacobi(a, p) != -1) { ++a; ma = mp.add(ma, mp.one()); if (a == 256) break; }
+					if (a < 256)
+					{
+						const uint64_t c = mp.pow(ma, k), b2 = mp.mul(c, c);
+						uint64_t b = mp.toInt(c);
+
+						Mpbb2 & mpbb2 = parray.mpbb2[i];
+						mpbb2.mp = mp; mpbb2.b = b; mpbb2.b2 = b2;
+						i = (i + 1) % parray_size;
+						if (i == 0) _pqueue.push(parray);
+					}
+				}
+			}
+		}
+
+		parray.mpbb2[i].mp = MpArith();
+		_pqueue.push(parray);
+		_pqueue.end();
+	}
+
 public:
 	void check()
 	{
@@ -621,53 +715,52 @@ public:
 
 		if (!init()) return;
 
-		Wheel wheel(n + 1);
-		wheel.init(k_min);
+		std::thread t_gen_k([=] { gen_k(); }); t_gen_k.detach();
+		std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
-		for (uint64_t k = wheel.get(); k != 0; k = wheel.get())
+		std::thread t_gen_p([=] { gen_p(); }); t_gen_p.detach();
+		std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+		pArray parray;
+		while (_pqueue.pop(parray))
 		{
-			const uint64_t p = (k << (n + 1)) + 1;
-
-			const MpArith mp(p);
-
-			if (mp.prp())
+			for (size_t j = 0; j < parray_size; ++j)
 			{
-				uint64_t a = 3, ma = mp.three();
-				while (jacobi(a, p) != -1) { ++a; ma = mp.add(ma, mp.one()); if (a == 256) break; }
+				const Mpbb2 & mpbb2 = parray.mpbb2[j];
+				const MpArith & mp = mpbb2.mp;
+				const uint64_t p = mp.p();
+				if (p == 0) break;
+				uint64_t b = mpbb2.b; const uint64_t b2 = mpbb2.b2;
 
-				if (a < 256)
+				if (p <= b_max)
 				{
-					const uint64_t c = mp.pow(ma, k), b2 = mp.mul(c, c);
-					uint64_t b = mp.toInt(c);
-
-					if (p <= b_max)
+					for (uint64_t i = 0; i < (uint64_t(1) << (n - 1)); ++i)
 					{
-						for (uint64_t i = 0; i < (uint64_t(1) << (n - 1)); ++i)
-						{
-							const uint64_t beven = (b % 2 == 0) ? b : p - b;			// 0 <= b_even < p
-							if (!check_roots(beven, b_min, b_max, p, n)) break;
-							if (!check_roots(2 * p - beven, b_min, b_max, p, n)) break;	// p < 2p - b_even <= 2p
-							b = mp.mul(b, b2);
-						}
+						const uint64_t beven = (b % 2 == 0) ? b : p - b;			// 0 <= b_even < p
+						if (!check_roots(beven, b_min, b_max, p, n)) break;
+						if (!check_roots(2 * p - beven, b_min, b_max, p, n)) break;	// p < 2p - b_even <= 2p
+						b = mp.mul(b, b2);
 					}
-					else
-					{
-						for (uint64_t i = 0; i < (uint64_t(1) << (n - 1)); ++i)
-						{
-							const uint64_t beven = (b % 2 == 0) ? b : p - b;
-							if ((beven >= b_min) && (beven <= b_max))
-							{
-								if (!check_root(beven, b_min, p, n)) break;
-							}
-							b = mp.mul(b, b2);
-						}
-					}
-
-					_p_min = p;
-					if (!monitor()) return;
 				}
+				else
+				{
+					for (uint64_t i = 0; i < (uint64_t(1) << (n - 1)); ++i)
+					{
+						const uint64_t beven = (b % 2 == 0) ? b : p - b;
+						if ((beven >= b_min) && (beven <= b_max))
+						{
+							if (!check_root(beven, b_min, p, n)) break;
+						}
+						b = mp.mul(b, b2);
+					}
+				}
+
+				_p_min = p;
+				if (!monitor()) return;
 			}
 		}
+
+		write(true);
 	}
 };
 
