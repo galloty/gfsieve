@@ -203,6 +203,7 @@ public:
 	MpArith & operator=(const MpArith & rhs) { _p = rhs._p; _q = rhs._q; _one = rhs._one, _r2 = rhs._r2; return *this; }
 
 	uint64_t p() const { return _p; }
+	uint64_t q() const { return _q; }
 
 	uint64_t toMp(const uint64_t n) const { return mul(n, _r2); }
 	uint64_t toInt(const uint64_t r) const { return REDCshort(r); }
@@ -253,6 +254,30 @@ public:
 			if ((e & (uint64_t(1) << b)) != 0) r = add(r, r);
 		}
 		return (r == _one);
+	}
+};
+
+using vu64 = uint64_t[4];
+
+class MpArith4
+{
+private:
+	vu64 _p, _q;
+
+private:
+	static constexpr uint64_t mul_hi(const uint64_t lhs, const uint64_t rhs) { return uint64_t((lhs * __uint128_t(rhs)) >> 64); }
+
+public:
+	MpArith4(const vu64 p, const vu64 q) { for (size_t i = 0; i < 4; ++i) { _p[i] = p[i]; _q[i] = q[i]; } }
+
+	void mul(vu64 a, const vu64 b) const
+	{
+		for (size_t i = 0; i < 4; ++i)
+		{
+			const __uint128_t t = a[i] * __uint128_t(b[i]);
+			const uint64_t mp = mul_hi(uint64_t(t) * _q[i], _p[i]), t_hi = uint64_t(t >> 64), r = t_hi - mp;
+			a[i] = (t_hi < mp) ? r + _p[i] : r;
+		}
 	}
 };
 
@@ -361,11 +386,11 @@ private:
 	struct kArray { uint64_t k[karray_size]; };
 
 	static const size_t parray_size = 1024;
-	struct Mpbb2  { MpArith mp; uint64_t b; uint64_t b2; };
+	struct Mpbb2 { uint64_t p; uint64_t q; uint64_t b; uint64_t b2; };
 	struct pArray { Mpbb2 mpbb2[parray_size]; };
 
 	Fifo<kArray> _kqueue;	//	512KB
-	Fifo<pArray> _pqueue;	//	3MB
+	Fifo<pArray> _pqueue;	//	2MB
 
 private:
 	static void quit(int) { _quit = true; }
@@ -655,8 +680,11 @@ private:
 		}
 		while (wheel_k >= wheel_sieve_size);
 
-		karray.k[j] = 0;
-		_kqueue.push(karray);
+		if (j > 0)
+		{
+			for (; j < karray_size; ++j) karray.k[j] = karray.k[0];
+			_kqueue.push(karray);
+		}
 		_kqueue.end();
 	}
 
@@ -688,7 +716,7 @@ private:
 						uint64_t b = mp.toInt(c);
 
 						Mpbb2 & mpbb2 = parray.mpbb2[i];
-						mpbb2.mp = mp; mpbb2.b = b; mpbb2.b2 = b2;
+						mpbb2.p = p; mpbb2.q = mp.q(); mpbb2.b = b; mpbb2.b2 = b2;
 						i = (i + 1) % parray_size;
 						if (i == 0) _pqueue.push(parray);
 					}
@@ -696,8 +724,11 @@ private:
 			}
 		}
 
-		parray.mpbb2[i].mp = MpArith();
-		_pqueue.push(parray);
+		if (i > 0)
+		{
+			for (; i < parray_size; ++i) parray.mpbb2[i] = parray.mpbb2[0];
+			_pqueue.push(parray);
+		}
 		_pqueue.end();
 	}
 
@@ -711,8 +742,6 @@ public:
 
 		if (!read()) _p_min = (1ull << (n + 1)) + 1;
 
-		const uint64_t k_min = _p_min >> (n + 1);
-
 		if (!init()) return;
 
 		std::thread t_gen_k([=] { gen_k(); }); t_gen_k.detach();
@@ -724,40 +753,52 @@ public:
 		pArray parray;
 		while (_pqueue.pop(parray))
 		{
-			for (size_t j = 0; j < parray_size; ++j)
+			for (size_t j = 0; j < parray_size; j += 4)
 			{
-				const Mpbb2 & mpbb2 = parray.mpbb2[j];
-				const MpArith & mp = mpbb2.mp;
-				const uint64_t p = mp.p();
-				if (p == 0) break;
-				uint64_t b = mpbb2.b; const uint64_t b2 = mpbb2.b2;
+				const Mpbb2 & mpbb2_0 = parray.mpbb2[j + 0];
+				const Mpbb2 & mpbb2_1 = parray.mpbb2[j + 1];
+				const Mpbb2 & mpbb2_2 = parray.mpbb2[j + 2];
+				const Mpbb2 & mpbb2_3 = parray.mpbb2[j + 3];
+				vu64 vp; vp[0] = mpbb2_0.p; vp[1] = mpbb2_1.p; vp[2] = mpbb2_2.p; vp[3] = mpbb2_3.p;
+				vu64 vq; vq[0] = mpbb2_0.q; vq[1] = mpbb2_1.q; vq[2] = mpbb2_2.q; vq[3] = mpbb2_3.q;
+				vu64 vb; vb[0] = mpbb2_0.b; vb[1] = mpbb2_1.b; vb[2] = mpbb2_2.b; vb[3] = mpbb2_3.b;
+				vu64 vb2; vb2[0] = mpbb2_0.b2; vb2[1] = mpbb2_1.b2; vb2[2] = mpbb2_2.b2; vb2[3] = mpbb2_3.b2;
 
-				if (p <= b_max)
+				MpArith4 mp(vp, vq);
+
+				if (vp[0] <= b_max)
 				{
 					for (uint64_t i = 0; i < (uint64_t(1) << (n - 1)); ++i)
 					{
-						const uint64_t beven = (b % 2 == 0) ? b : p - b;			// 0 <= b_even < p
-						if (!check_roots(beven, b_min, b_max, p, n)) break;
-						if (!check_roots(2 * p - beven, b_min, b_max, p, n)) break;	// p < 2p - b_even <= 2p
-						b = mp.mul(b, b2);
+						for (size_t i = 0; i < 4; ++i)
+						{
+							const uint64_t beven = (vb[i] % 2 == 0) ? vb[i] : vp[i] - vb[i];	// 0 <= b_even < p
+							check_roots(beven, b_min, b_max, vp[i], n);
+							check_roots(2 * vp[i] - beven, b_min, b_max, vp[i], n);				// p < 2p - b_even <= 2p
+						}
+
+						mp.mul(vb, vb2);
 					}
 				}
 				else
 				{
 					for (uint64_t i = 0; i < (uint64_t(1) << (n - 1)); ++i)
 					{
-						const uint64_t beven = (b % 2 == 0) ? b : p - b;
-						if ((beven >= b_min) && (beven <= b_max))
+						vu64 beven; for (size_t i = 0; i < 4; ++i) beven[i] = (vb[i] % 2 == 0) ? vb[i] : vp[i] - vb[i];
+
+						mp.mul(vb, vb2);
+
+						for (size_t i = 0; i < 4; ++i)
 						{
-							if (!check_root(beven, b_min, p, n)) break;
+							if ((beven[i] >= b_min) && (beven[i] <= b_max)) check_root(beven[i], b_min, vp[i], n);
 						}
-						b = mp.mul(b, b2);
+
 					}
 				}
-
-				_p_min = p;
-				if (!monitor()) return;
 			}
+
+			_p_min = parray.mpbb2[parray_size - 1].p;
+			if (!monitor()) return;
 		}
 
 		write(true);
