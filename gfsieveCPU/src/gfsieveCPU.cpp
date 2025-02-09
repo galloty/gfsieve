@@ -258,6 +258,7 @@ public:
 	}
 };
 
+// Multithreaded FIFO
 template<typename T>
 class Fifo
 {
@@ -296,7 +297,7 @@ public:
 			}
 			_mutex.unlock();
 			std::cout << "Warning: empty FIFO." << std::endl;
-			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 			_mutex.lock();
 		}
 		val = _queue.front();
@@ -333,7 +334,7 @@ static std::string header()
 #endif
 
 	std::ostringstream ss;
-	ss << "gfsieveCPU 25.1.0 " << sysver << ssc.str() << std::endl;
+	ss << "gfsieveCPU 25.2.0 " << sysver << ssc.str() << std::endl;
 	ss << "Copyright (c) 2020, Yves Gallot" << std::endl;
 	ss << "gfsieve is free source code, under the MIT license." << std::endl << std::endl;
 	return ss.str();
@@ -357,7 +358,9 @@ private:
 	uint64_t _p_min;
 	inline static volatile bool _quit = false;
 	std::string _filename;
+	uint64_t _p_record;
 	std::chrono::high_resolution_clock::time_point _display_time, _record_time, _start_time;
+	size_t _record_count;
 
 	static const size_t karray_size = 1024;
 	struct kArray { uint64_t k[karray_size]; };
@@ -448,15 +451,20 @@ private:
 		return ~crc;
 	}
 
-	void info() const
+	void info(const bool ini, const double elapsed_record_time)
 	{
 		static const double C[24] = { 0, 1.372813463, 2.678963880, 2.092794130, 3.671432123, 3.612924486, 3.942741295, 3.108964582,
 			7.434805998, 7.489066280, 8.019343498, 7.224596905, 8.425349878, 8.467885720, 8.009684535, 5.802658835, 11.19571423,
 			11.00430059, 13.00784637, 13.0724, 14.5167, 16.0846, 17.4099, 17.1286 };
 		// #candidates = e^-gamma * C_n * (b_max - b_min) / log(p_max)
 		const size_t size = 2 * get_size(), count = get_count();
+
 		const double expected = 0.561459483567 * C[_n] * (_b_max - _b_min) / std::log(_p_min);
-		std::cout << "p = " << uint2string(_p_min) << ", remaining " << count << "/" << size << " candidates (" << count * 100.0 / size << "%), expected: " << expected * 100.0 / size << "%." << std::endl;
+		std::cout << "p = " << uint2string(_p_min) << ", remaining: " << count << "/" << size
+				  << " (" << count * 100.0 / size << "%, exp " << expected * 100.0 / size << "%)";
+		if (!ini) std::cout << ", removing " << std::lrint(86400.0 * (_record_count - count) / elapsed_record_time) << " cand/day";
+		std::cout << "." << std::endl;
+		_record_count = count;
 	}
 
 	bool read()
@@ -496,11 +504,11 @@ private:
 		}
 
 		std::cout << "Resuming from a checkpoint." << std::endl;
-		info();
+		info(true, 0);
 		return true;
 	}
 
-	void write(const bool cand) const
+	void write(const bool cand, const double elapsed_record_time)
 	{
 		struct stat s;
 		const std::string sieve_filename = get_sieve_filename(), old_filename = sieve_filename + ".old";
@@ -535,13 +543,24 @@ private:
 			file.close();
 		}
 
-		info();
+		info(false, elapsed_record_time);
 	}
 
-	bool init()
+	bool init(const uint64_t p_record)
 	{
+		_p_record = p_record;
 		_display_time = _record_time = _start_time = std::chrono::high_resolution_clock::now();
 		return !_quit;
+	}
+
+	static std::string formatTime(const double time)
+	{
+		long seconds = std::lrint(time), minutes = seconds / 60, hours = minutes / 60;
+		seconds -= minutes * 60; minutes -= hours * 60;
+
+		std::stringstream ss;
+		ss << std::setfill('0') << std::setw(2) << hours << ':' << std::setw(2) << minutes << ':' << std::setw(2) << seconds;
+		return ss.str();
 	}
 
 	bool monitor()
@@ -551,11 +570,15 @@ private:
 		if (quit || (std::chrono::duration<double>(now - _display_time).count() > 1))
 		{
 			_display_time = now;
-			std::cout << std::lrint(std::chrono::duration<double>(now - _start_time).count()) << ": " << uint2string(_p_min) << "\r";
-			if (quit || (std::chrono::duration<double>(now - _record_time).count() > 5 * 60))
+			const double elapsed_time = std::chrono::duration<double>(now - _start_time).count();
+			const double elapsed_record_time = std::chrono::duration<double>(now - _record_time).count();
+			const double Pday = (_p_min - _p_record) * 86400.0 / elapsed_record_time / 1e15;
+			std::cout << formatTime(elapsed_time) << ": " << uint2string(_p_min) << ", " << Pday << "P/day\r";
+			if (quit || (elapsed_record_time > 10 * 60))
 			{
 				_record_time = now;
-				write(quit);
+				write(quit, elapsed_record_time);
+				_p_record = _p_min;
 			}
 		}
 		return !quit;
@@ -595,6 +618,7 @@ private:
 		return true;
 	}
 
+	// Generate k, such that k*2^{n + 1} + 1 has no small divisor, using a wheel.
 	void gen_k()
 	{
 		const int n = _n;
@@ -665,6 +689,8 @@ private:
 		_kqueue.end();
 	}
 
+	// Generate p = k*2^{n + 1} + 1 such that p is a 2-prp. b is a solution to x^{2^n} + 1 = 0 (mod p).
+	// If (a/p) = a^{(p - 1)/2) = -1 (mod p) then b = a^k.
 	void gen_p()
 	{
 		const int n = _n;
@@ -719,13 +745,13 @@ public:
 
 		if (!read()) _p_min = (1ull << (n + 1)) + 1;
 
-		if (!init()) return;
-
 		std::thread t_gen_k([=] { gen_k(); }); t_gen_k.detach();
 		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
 		std::thread t_gen_p([=] { gen_p(); }); t_gen_p.detach();
 		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+		if (!init(_p_min)) return;
 
 		pArray parray;
 		while (_pqueue.pop(parray))
@@ -752,11 +778,12 @@ public:
 						check_roots(2 * p - b1_even, b_min, b_max, p, n);	// p < 2p - b_even <= 2p
 					}
 				}
-				else
+				else	// The number of roots <= b_max is zero or one
 				{
 					const uint64_t b4 = mp.mul(b2, b2), b8 = mp.mul(b4, b4);
 					uint64_t b3 = mp.mul(b1, b2), b5 = mp.mul(b1, b4), b7 = mp.mul(b3, b4);
 
+					// Check four roots to hide multiplication latency
 					for (uint64_t i = 0; i < (uint64_t(1) << (n - 1)); i += 4)
 					{
 						const uint64_t b1_even = (b1 % 2 == 0) ? b1 : p - b1, b3_even = (b3 % 2 == 0) ? b3 : p - b3;
@@ -777,7 +804,8 @@ public:
 			if (!monitor()) return;
 		}
 
-		write(true);
+		quit(1);
+		monitor();
 	}
 };
 
