@@ -7,51 +7,32 @@ Please give feedback to the authors if improvement is realized. It is distribute
 
 #pragma once
 
+#include <chrono>
 #include <string>
 #include <sstream>
 #include <iomanip>
 
-#if defined(_WIN32)	// use Performance Counter
-#include <Windows.h>
-#else					// otherwise use gettimeofday() instead
-#include <sys/time.h>
-#endif
-
 struct timer
 {
-#if defined(_WIN32)
-	typedef LARGE_INTEGER time;
-#else
-	typedef timeval time;
-#endif
+	typedef std::chrono::high_resolution_clock::time_point time;
 
-	static time currentTime()
+	static time current_time()
 	{
-#if defined(_WIN32)
-		LARGE_INTEGER time; QueryPerformanceCounter(&time);
-#else
-		timeval time; gettimeofday(&time, nullptr);
-#endif
-		return time;
+		return std::chrono::high_resolution_clock::now();
 	}
 
-	static double diffTime(const time & end, const time & start)
+	static double diff_time(const time & end, const time & start)
 	{
-#if defined(_WIN32)
-		LARGE_INTEGER freq; QueryPerformanceFrequency(&freq);
-		return double(end.QuadPart - start.QuadPart) / double(freq.QuadPart);
-#else
-		return double(end.tv_sec - start.tv_sec) + double(end.tv_usec - start.tv_usec) * 1e-6;
-#endif
+		return std::chrono::duration<double>(end - start).count();
 	}
 
-	static std::string formatTime(const double time)
+	static std::string format_time(const double time)
 	{
-		uint64_t seconds = uint64_t(time), minutes = seconds / 60, hours = minutes / 60;
+		uint64_t seconds = static_cast<uint64_t>(time), minutes = seconds / 60, hours = minutes / 60;
 		seconds -= minutes * 60; minutes -= hours * 60;
 
 		std::stringstream ss;
-		ss << std::setfill('0') << std::setw(2) <<  hours << ':' << std::setw(2) << minutes << ':' << std::setw(2) << seconds;
+		ss << std::setfill('0') << std::setw(2) << hours << ':' << std::setw(2) << minutes << ':' << std::setw(2) << seconds;
 		return ss.str();
 	}
 };

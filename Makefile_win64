@@ -1,11 +1,11 @@
-CC = g++ -m32 -std=c++17
-CFLAGS = -O2 -Wall -Wextra -fexceptions
+CC = g++ -m64 -std=c++17
+CFLAGS = -O2 -Wall -Wextra -Wsign-conversion -ffinite-math-only
 
 BIN_DIR = bin
 SRC_DIR = src
 
 OCL_INC = -I Khronos
-OCL_LIB = -Wl,-enable-stdcall-fixup C:/Windows/SysWOW64/OpenCL.dll
+OCL_LIB = C:\Windows\System32\OpenCL.dll
 
 SRC = $(SRC_DIR)\main.cpp
 EXEC = $(BIN_DIR)\gfsieve.exe
@@ -14,4 +14,3 @@ build: $(EXEC)
 
 $(EXEC): $(SRC)
 	$(CC) $(SRC) $(CFLAGS) $(OCL_INC) $(OCL_LIB) -lgmp -static -o $@
-

@@ -16,8 +16,15 @@ Please give feedback to the authors if improvement is realized. It is distribute
 
 #include <gmp.h>
 
-#include "ocl/sieve.h"
+inline void mpz_set_u64(mpz_t & rop, const uint64_t op)
+{
+	// _LONG_LONG_LIMB is required
+	if (op == 0) mpz_set_ui(rop, 0);
+	else { mpz_set_ui(rop, 1); rop->_mp_d[0] = op; }
+}
+
 #include "ocl/sieve64.h"
+#include "ocl/sieve79.h"
 
 class gfsieve
 {
@@ -28,374 +35,318 @@ public:
 	gfsieve() {}
 	virtual ~gfsieve() {}
 
-	static gfsieve & getInstance()
+	static gfsieve & get_instance()
 	{
-		static std::unique_ptr<gfsieve, deleter> pInstance(new gfsieve());
-		return *pInstance;
+		static std::unique_ptr<gfsieve, deleter> instance(new gfsieve());
+		return *instance;
 	}
 
-public:
 	void quit() { _quit = true; }
 
 protected:
 	volatile bool _quit = false;
 	bool _64bit = false;
 	bool _display = false;
-	size_t _factorSize = 0;
-	uint32_t _n = 0;
-	static constexpr size_t _factorsLoop = size_t(1) << 10u;
-	size_t _savedCount = 0;
-	static constexpr int _log2GlobalWorkSize = 22;
-	static constexpr size_t _localWorkSize = 0;
-	timer::time _startTime;
+	size_t _max_factor_size = 0;
+	int _n = 0;
+	uint_8 _wheel[8];
+	static constexpr size_t _factors_block = size_t(1) << 10u;
+	static constexpr int _log2_block_size = 12;
+	timer::time _start_time;
 	std::string _extension;
-	std::vector<cl_ulong2> _factor;
+	std::vector<uint64_2> _factor;
 	static constexpr double _unit = 1e15;
 
 private:
-	static bool readOpenCL(const char * const clFileName, const char * const headerFileName, const char * const varName, std::stringstream & src)
+	static bool read_OpenCL(const char * const cl_filename, const char * const header_filename, const char * const varname, std::stringstream & src)
 	{
-		std::ifstream clFile(clFileName);
-		if (!clFile.is_open()) return false;
+		std::ifstream cl_file(cl_filename);
+		if (!cl_file.is_open()) return false;
 
 		// if .cl file exists then generate header file
-		std::ofstream hFile(headerFileName, std::ios::binary);	// binary: don't convert line endings to `CRLF` 
-		if (!hFile.is_open()) throw std::runtime_error("cannot write openCL header file");
+		std::ofstream h_file(header_filename, std::ios::binary);	// binary: don't convert line endings to `CRLF` 
+		if (!h_file.is_open()) throw std::runtime_error("cannot write OpenCL header file");
 
-		hFile << "/*" << std::endl;
-		hFile << "Copyright 2020, Yves Gallot" << std::endl << std::endl;
-		hFile << "gfsieve is free source code, under the MIT license (see LICENSE). You can redistribute, use and/or modify it." << std::endl;
-		hFile << "Please give feedback to the authors if improvement is realized. It is distributed in the hope that it will be useful." << std::endl;
-		hFile << "*/" << std::endl << std::endl;
+		h_file << "/*" << std::endl;
+		h_file << "Copyright 2020, Yves Gallot" << std::endl << std::endl;
+		h_file << "gfsieve is free source code, under the MIT license (see LICENSE). You can redistribute, use and/or modify it." << std::endl;
+		h_file << "Please give feedback to the authors if improvement is realized. It is distributed in the hope that it will be useful." << std::endl;
+		h_file << "*/" << std::endl << std::endl;
 
-		hFile << "#pragma once" << std::endl << std::endl;
-		hFile << "#include <cstdint>" << std::endl << std::endl;
+		h_file << "#pragma once" << std::endl << std::endl;
+		h_file << "#include <cstdint>" << std::endl << std::endl;
 
-		hFile << "static const char * const " << varName << " = \\" << std::endl;
+		h_file << "static const char * const " << varname << " = \\" << std::endl;
 
 		std::string line;
-		while (std::getline(clFile, line))
+		while (std::getline(cl_file, line))
 		{
-			hFile << "\"";
+			h_file << "\"";
 			for (char c : line)
 			{
-				if ((c == '\\') || (c == '\"')) hFile << '\\';
-				hFile << c;
+				if ((c == '\\') || (c == '\"')) h_file << '\\';
+				h_file << c;
 			}
-			hFile << "\\n\" \\" << std::endl;
+			h_file << "\\n\" \\" << std::endl;
 
 			src << line << std::endl;
 		}
-		hFile << "\"\";" << std::endl;
+		h_file << "\"\";" << std::endl;
 
-		hFile.close();
-		clFile.close();
+		h_file.close();
+		cl_file.close();
 		return true;
 	}
 
-private:
-	void initEngine(engine & eng, const int log2Global) const
+	void init_engine(engine & eng, const bool is64) const
 	{
 		std::stringstream src;
-		src << "#define\tlog2GlobalWorkSize\t" << log2Global << std::endl;
-		src << "#define\tg_n\t" << _n + 1 << std::endl;
-		src << "#define\tfactors_loop\t" << _factorsLoop << std::endl;
+		src << "#define G_N\t" << _n + 1 << std::endl;
+		src << "#define LN_BLKSZ\t" << _log2_block_size << std::endl;
+		src << "#define FBLK\t" << _factors_block << std::endl;
 		src << std::endl;
+
+		src << "#define uint_8\tuchar" << std::endl;
+		src << "__constant uint_8 wheel[8] = { ";
+		for (size_t i = 0; i < 8; ++i) { src << int(_wheel[i]); if (i != 7) src << ", "; }
+		src << " };" << std::endl << std::endl;
 
 		if (_64bit)
 		{
-			if (!readOpenCL("ocl/sieve64.cl", "src/ocl/sieve64.h", "src_ocl_sieve64", src)) src << src_ocl_sieve64;
+			if (!read_OpenCL("ocl/sieve64.cl", "src/ocl/sieve64.h", "src_ocl_sieve64", src)) src << src_ocl_sieve64;
 		}
 		else
 		{
-			if (!readOpenCL("ocl/sieve.cl", "src/ocl/sieve.h", "src_ocl_sieve", src)) src << src_ocl_sieve;
+			if (!read_OpenCL("ocl/sieve79.cl", "src/ocl/sieve79.h", "src_ocl_sieve79", src)) src << src_ocl_sieve79;
 		}
-
+// std::cout << src.str() << std::endl;
 		eng.loadProgram(src.str());
-		eng.allocMemory(size_t(1) << log2Global, _factorSize);
-		eng.createKernels();
+		eng.alloc_memory(size_t(1) << _log2_block_size, _max_factor_size, is64);
+		eng.create_kernels();
 
-		cl_char kro[128 * 256];
+		// Kronecker symbols (i/j) for odd j <= 255.
+		int_8 kro[128 * 256];
 		mpz_t zj; mpz_init(zj);
 		for (uint32_t j = 3; j < 256; j += 2)
 		{
 			mpz_set_ui(zj, j);
 			for (uint32_t i = 0; i < j; ++i)
 			{
-				kro[256 * ((j - 3) / 2) + i] = cl_char(mpz_ui_kronecker(i, zj));
+				kro[256 * ((j - 3) / 2) + i] = int_8(mpz_ui_kronecker(i, zj));
 			}
 		}
 		mpz_clear(zj);
-		eng.writeKronecker(kro);
+		eng.write_Kronecker(kro);
 
-		eng.clearCounters();
+		eng.init();
 	}
 
-private:
-	void clearEngine(engine & eng) const
+	void clear_engine(engine & eng) const
 	{
-		eng.releaseKernels();
-		eng.releaseMemory();
+		eng.release_kernels();
+		eng.release_memory();
 		eng.clearProgram();
 	}
 
-private:
-	void readFactors(engine & eng, const double dp)
+	size_t read_factors(engine & eng, const double dp)
 	{
-		const size_t factorCount = eng.readFactorCount();
-		const double elapsedTime = timer::diffTime(timer::currentTime(), _startTime);
+		const size_t factor_count = eng.read_factor_count();
+		const double elapsed_time = timer::diff_time(timer::current_time(), _start_time);
 
-		if (factorCount >= _factorSize) throw std::runtime_error("factor count is too large");
+		if (factor_count >= _max_factor_size) throw std::runtime_error("factor count is too large");
 
-		std::cout << factorCount << " factors";
-		if (elapsedTime > 10)
+		std::cout << factor_count << " factor(s)";
+		if (elapsed_time > 10)
 		{
-			std::cout << ", " << std::max(int(86400 / 1e15 * dp / elapsedTime), 1) << "P/day, time = " << timer::formatTime(elapsedTime);
+			std::cout << ", " << std::max(int(86400 / 1e15 * dp / elapsed_time), 1) << "P/day, time = " << timer::format_time(elapsed_time);
 		}
 		else std::cout << "                      ";
 		std::cout << std::endl;
 
-		if (_savedCount != factorCount)
+		if (factor_count > 0)
 		{
-			_factor.resize(factorCount);
-			eng.readFactors(_factor.data(), factorCount);
+			_factor.resize(factor_count);
+			eng.read_factors(_factor.data(), factor_count);
 		}
+
+		return factor_count;
 	}
 
-private:
-	bool recordFactors()
+	bool record_factors()
 	{
 		bool success = false;
 		mpz_t zp, zr, zt; mpz_inits(zp, zr, zt, nullptr);
 
-		const size_t factorCount = _factor.size();
-		if (_savedCount != factorCount)
+		const std::string res_filename = std::string("gf") + _extension;
+		std::ofstream res_file(res_filename, std::ios::app);
+		if (res_file.is_open())
 		{
-			const std::string resFilename = std::string("gf") + _extension;
-			std::ofstream resFile(resFilename, std::ios::app);
-			if (resFile.is_open())
+			const int n = _n;
+			for (const cl_ulong2 f : _factor)
 			{
-				const uint32_t n = _n, N = uint32_t(1) << n;
-				for (size_t i = _savedCount; i < factorCount; ++i)
-				{
-					const cl_ulong2 & f = _factor[i];
-					const uint32_t b = uint32_t(f.s[1] >> 32);
-					mpz_set_ui(zp, uint32_t(f.s[1]));
-					mpz_mul_2exp(zp, zp, 32); mpz_add_ui(zp, zp, uint32_t(f.s[0] >> 32));
-					mpz_mul_2exp(zp, zp, 32); mpz_add_ui(zp, zp, uint32_t(f.s[0]));
-					char str[32]; mpz_get_str(str, 10, zp);
+				const uint32_t b = uint32_t(f.s[1]);
+				if (b > 2000000000u) continue;
+				mpz_set_ui(zp, uint32_t(f.s[0] >> 32)); mpz_mul_2exp(zp, zp, 32); mpz_add_ui(zp, zp, uint32_t(f.s[0]));
+				mpz_mul_2exp(zp, zp, mp_bitcnt_t(n + 1)); mpz_add_ui(zp, zp, 1);
+				char str[32]; mpz_get_str(str, 10, zp);
 
-					mpz_set_ui(zr, b); mpz_powm_ui(zr, zr, N, zp); mpz_add_ui(zr, zr, 1);
-					if (mpz_cmp(zr, zp) == 0)
+				mpz_set_ui(zr, b); mpz_powm_ui(zr, zr, uint32_t(1) << n, zp); mpz_add_ui(zr, zr, 1);
+				if (mpz_cmp(zr, zp) == 0)
+				{
+					std::ostringstream ss; ss << str << " | " << b << "^{2^" << n << "}+1" << std::endl;
+					res_file << ss.str();
+					if (_display) std::cout << ss.str();
+				}
+				else
+				{
+					mpz_set_ui(zt, 2); mpz_powm(zt, zt, zp, zp);
+					if (mpz_cmp_ui(zt, 2) != 0)
 					{
-						std::ostringstream ss; ss << str << " | " << b << "^" << N << "+1" << std::endl;
-						resFile << ss.str();
-						if (_display) std::cout << ss.str();
+						std::ostringstream ss; ss << str << " is not 2-prp";
+						throw std::runtime_error(ss.str());
 					}
-					else
+					bool is_prime = true;
+					for (uint32_t a = 3; a < 1000; a += 2)
 					{
-						mpz_set_ui(zt, 2); mpz_powm(zt, zt, zp, zp);
-						if (mpz_cmp_ui(zt, 2) != 0)
+						mpz_set_ui(zt, a); mpz_powm(zt, zt, zp, zp);
+						if (mpz_cmp_ui(zt, a) != 0)
 						{
-							std::ostringstream ss; ss << str << " is not 2-prp";
-							throw std::runtime_error(ss.str());
+							is_prime = false;
+							break;
 						}
-						bool isPrime = true;
-						for (uint32_t a = 3; a < 1000; a += 2)
-						{
-							mpz_set_ui(zt, a); mpz_powm(zt, zt, zp, zp);
-							if (mpz_cmp_ui(zt, a) != 0)
-							{
-								isPrime = false;
-								break;
-							}
-						}
-						if (isPrime)
-						{
-							std::ostringstream ss; ss << str << " doesn't divide " << b << "^" << N << "+1";
-							throw std::runtime_error(ss.str());
-						}
+					}
+					if (is_prime)
+					{
+						std::ostringstream ss; ss << str << " doesn't divide " << b << "^{2^" << n << "}+1";
+						throw std::runtime_error(ss.str());
 					}
 				}
-				resFile.close();
-				_savedCount = factorCount;
-				success = true;
 			}
+			res_file.close();
+			success = true;
 		}
 
 		mpz_clears(zp, zr, zt, nullptr);
 		return success;
 	}
 
-private:
-	void saveFactors(engine & eng, const uint64_t cnt, const double dp)
+	void save_factors(engine & eng, const uint64_t cnt, const double dp)
 	{
-		readFactors(eng, dp);
-		if (recordFactors())
+		if (read_factors(eng, dp) > 0)
 		{
-			const std::string ctxFilename = std::string("ctx") + _extension;
-			std::ofstream ctxFile(ctxFilename);
-			if (ctxFile.is_open())
+			if (record_factors())
 			{
-				// ctxFile << cnt << " " << _log2GlobalWorkSize << " " << _localWorkSize << std::endl;
-				ctxFile << cnt << std::endl;
-				ctxFile.close();
+				const std::string ctx_filename = std::string("ctx") + _extension;
+				std::ofstream ctx_file(ctx_filename);
+				if (ctx_file.is_open())
+				{
+					ctx_file << cnt << std::endl;
+					ctx_file.close();
+				}
+				eng.clear_factor_count();
 			}
 		}
 	}
 
-/*private:
-	double autoTuning(engine & eng, const uint32_t p_min)
-	{
-		std::cout << " auto-tuning...\r";
-
-		const size_t maxWorkGroupSize = eng.getMaxWorkGroupSize();
-		const size_t N_2_factors_loop = (size_t(1) << (_n - 1)) / _factorsLoop;
-
-		double bestTime = 1e100;
-		for (int log2Global = 17; log2Global <= 21; ++log2Global)
-		{
-			const size_t global = size_t(1) << log2Global;
-
-			eng.setProfiling(true);
-			initEngine(eng, log2Global);
-
-			const double f = _unit / pow(2.0, double(_n + 1 + log2Global));
-			const uint64_t i = uint64_t(floor(p_min * f));
-
-			for (size_t local = 8; local <= maxWorkGroupSize; local *= 2)
-			{
-				if (_quit) return 0;
-
-				eng.generatePrimes(global, i);
-				eng.initFactors(global);
-				eng.checkFactors(global, N_2_factors_loop, (local == 8) ? 0 : local);
-				eng.clearPrimes();
-				eng.readFactorCount();
-
-				const double time = eng.getProfileTime() / double(global);
-				if (time < bestTime)
-				{
-					bestTime = time;
-					_log2GlobalWorkSize = log2Global;
-					_localWorkSize = (local == 8) ? 0 : local;
-				}
-
-				eng.resetProfiles();
-			}
-
-			clearEngine(eng);
-		}
-
-		const double pTime = bestTime / 1e9 * _unit / pow(2.0, double(_n + 1));
-		std::ostringstream ss; ss << std::max(int(86400 / pTime), 1) << " P/day (globalWorkSize = "
-			<< (size_t(1) << _log2GlobalWorkSize) << ", localWorkSize = " << _localWorkSize << ")";
-		std::cout << ss.str() << std::endl;
-		return pTime;
-	}*/
-
 public:
-	bool check(engine & eng, const uint32_t n, const uint32_t p_min, const uint32_t p_max, const bool display)
+	bool check(engine & eng, const int n, const uint32_t p_min, const uint32_t p_max, const bool display)
 	{
-		_64bit = (p_max + 1 <= size_t(-1) / _unit);
+		_64bit = (p_max <= size_t(-1) / _unit);
 		_display = display;
-		_factorSize = (p_min >= 8) ? (size_t(1) << 24) : (size_t(1) << 26);		// 2^26: 512MB
+		_max_factor_size = (p_min >= 8) ? (size_t(1) << 24) : (size_t(1) << 26);		// 2^26: 512MB
 		_n = n;
-		_savedCount = 0;
 		std::stringstream ss; ss << n << "_" << p_min << "_" << p_max << ".txt";
 		_extension = ss.str();
 
-		std::cout << (_64bit ? 64 : 61 + n + 1) << "-bit mode" << std::endl;
+		// gcd(p mod 15, 15) = 1: 8 solutions
+		size_t i = 0;
+		for (uint64 k = 0; k < 15; ++k)
+		{
+			const uint64 p = (k << (n + 1)) | 1;
+			if ((p % 3 == 0) || (p % 5 == 0)) continue;
+			_wheel[i] = uint_8(k);
+			++i;
+		}
+		if (i != 8) throw std::runtime_error("wheel count != 8");
+		std::cout << (_64bit ? 64 : 79) << "-bit mode" << std::endl;
 
 		uint64_t cnt = 0;
 		const std::string ctxFilename = std::string("ctx") + _extension;
-		std::ifstream ctxFile(ctxFilename);
-		if (ctxFile.is_open())
+		std::ifstream ctx_file(ctxFilename);
+		if (ctx_file.is_open())
 		{
-			ctxFile >> cnt;
-			// ctxFile >> _log2GlobalWorkSize;
-			// ctxFile >> _localWorkSize;
-			ctxFile.close();
+			ctx_file >> cnt;
+			ctx_file.close();
 		}
 
-		/*if (cnt == 0)
-		{
-			const double pTime = autoTuning(eng, p_min);
-			const std::string estimatedTime = timer::formatTime(pTime * (p_max - p_min));
-			std::cout << "Estimated time: " << estimatedTime << std::endl;
-		}*/
-
 		eng.setProfiling(false);
-		initEngine(eng, _log2GlobalWorkSize);
+		init_engine(eng, _64bit);
 
-		const double f = _unit / pow(2.0, double(n + 1 + _log2GlobalWorkSize));
-		const uint64_t i_min = uint64_t(floor(p_min * f)), i_max = uint64_t(ceil(p_max * f));
+		const size_t N_2_factors_block = (size_t(1) << (n - 1)) / _factors_block;
 
-		const size_t N_2_factors_loop = (size_t(1) << (_n - 1)) / _factorsLoop;
+		const double f = _unit * 8.0 / 15 / std::pow(2.0, double(_log2_block_size + n + 1));
+		const uint64 i_min = uint64(floor(p_min * f)), i_max = uint64(ceil(p_max * f));
+		const uint64 i_start = i_min + cnt;
 
 		mpz_t zp_min, zp_max; mpz_inits(zp_min, zp_max, nullptr);
 
-		const uint64_t i_start = i_min + cnt;
-		mpz_set_ui(zp_min, uint32_t(i_start >> 32)); mpz_mul_2exp(zp_min, zp_min, 32); mpz_add_ui(zp_min, zp_min, uint32_t(i_start));
-		mpz_mul_2exp(zp_min, zp_min, _log2GlobalWorkSize + _n + 1);
-		mpz_add_ui(zp_min, zp_min, 1);
+		const uint64 j_min = uint64(i_start) << _log2_block_size, j_max = uint64(i_max) << _log2_block_size;
+		const uint64 k_min = 15 * (j_min / 8) + _wheel[j_min % 8], k_max = 15 * (j_max / 8) + _wheel[j_max % 8];
 
-		mpz_set_ui(zp_max, uint32_t(i_max >> 32)); mpz_mul_2exp(zp_max, zp_max, 32); mpz_add_ui(zp_max, zp_max, uint32_t(i_max));
-		mpz_mul_2exp(zp_max, zp_max, _log2GlobalWorkSize);
-		mpz_sub_ui(zp_max, zp_max, 1);
-		mpz_mul_2exp(zp_max, zp_max, _n + 1);
-		mpz_add_ui(zp_max, zp_max, 1);
+		mpz_set_u64(zp_min, k_min); mpz_mul_2exp(zp_min, zp_min, mp_bitcnt_t(n + 1)); mpz_add_ui(zp_min, zp_min, 1);
+		mpz_set_u64(zp_max, k_max); mpz_mul_2exp(zp_max, zp_max, mp_bitcnt_t(n + 1)); mpz_add_ui(zp_max, zp_max, 1);
 
 		char p_min_str[32], p_max_str[32]; mpz_get_str(p_min_str, 10, zp_min); mpz_get_str(p_max_str, 10, zp_max);
-		std::cout << ((cnt != 0) ? "Resuming from a checkpoint, t" : "T") << "esting n = " << _n << " from " << p_min_str << " to " << p_max_str << std::endl;
+		std::cout << ((cnt != 0) ? "Resuming from a checkpoint, t" : "T") << "esting n = " << n << " from " << p_min_str << " to " << p_max_str << std::endl;
 
 		mpz_clears(zp_min, zp_max, nullptr);
 
-		_startTime = timer::currentTime();
-		timer::time displayTime = _startTime, recordTime = _startTime;
+		std::cout << "For i = " << i_start << " to " << i_max << std::endl;
 
-		const size_t globalWorkSize = size_t(1) << _log2GlobalWorkSize, localWorkSize = _localWorkSize;
+		_start_time = timer::current_time();
+		timer::time display_time = _start_time, record_time = _start_time;
 
-		// i * globalWorkSize * 2^{n + 1} + 1 <= p < (i + 1) * globalWorkSize * 2^{n + 1} + 1
-		for (uint64_t i = i_start; i < i_max; ++i)
+		const size_t block_size = size_t(1) << _log2_block_size;
+
+		for (uint64 i = i_start; i < i_max; ++i)
 		{
 			if (_quit) break;
 
-			eng.generatePrimes(globalWorkSize, i);
-			// const size_t primeCount = eng.readPrimeCount();
-			// std::cout << i << ": " << primeCount << " primes" << std::endl;
-			eng.initFactors(globalWorkSize);
-			eng.checkFactors(globalWorkSize, N_2_factors_loop, localWorkSize);
-			// const size_t factorCount = eng.readFactorCount();
-			// std::cout << factorCount << " factor(s)" << std::endl;
-			eng.clearPrimes();
+			eng.generate_primes(block_size, i);
+			 const size_t primeCount = eng.read_prime_count();
+			 std::cout << i << ": " << primeCount << " primes" << std::endl;
+			eng.init_factors(block_size);
+			eng.check_factors(block_size, N_2_factors_block);
+			 const size_t factorCount = eng.read_factor_count();
+			 std::cout << factorCount << " factor(s)" << std::endl;
+			eng.clear_prime_count();
 			++cnt;
 
-			const timer::time currentTime = timer::currentTime();
+			const timer::time current_time = timer::current_time();
 
-			if (timer::diffTime(currentTime, displayTime) > 1)
+			if (timer::diff_time(current_time, display_time) > 1)
 			{
-				displayTime = currentTime;
+				display_time = current_time;
 				std::ostringstream ss; ss << std::setprecision(3) << " " << cnt * 100.0 / (i_max - i_min) << "% done    \r";
 				std::cout << ss.str();
 			}
 
-			if (timer::diffTime(currentTime, recordTime) > 300)
+			if (timer::diff_time(current_time, record_time) > 300)
 			{
-				recordTime = currentTime;
-				saveFactors(eng, cnt, (i - i_start) * pow(2.0, double(n + 1 + _log2GlobalWorkSize)));
+				record_time = current_time;
+				save_factors(eng, cnt, (i - i_start) * pow(2.0, double(n + 1 + _log2_block_size)));
 			}
 		}
 
 		if (cnt > 0)
 		{
 			std::cout << " terminating...         \r";
-			saveFactors(eng, cnt, (i_max - i_start) * pow(2.0, double(n + 1 + _log2GlobalWorkSize)));
+			save_factors(eng, cnt, (i_max - i_start) * pow(2.0, double(n + 1 + _log2_block_size)));
 		}
 
 		// eng.displayProfiles(1);
 
-		clearEngine(eng);
+		clear_engine(eng);
 
 		return true;
 	}

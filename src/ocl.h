@@ -99,11 +99,12 @@ protected:
 	}
 
 protected:
-	static void oclFatal(const cl_int res)
+	static void oclFatal(const cl_int res, const char * const ext = nullptr)
 	{
 		if (!oclError(res))
 		{
 			std::ostringstream ss; ss << "opencl error: " << errorString(res);
+			if (ext != nullptr) ss << " (" << ext << ")";
 			throw std::runtime_error(ss.str());
 		}
 	}
@@ -161,6 +162,20 @@ public:
 		if (_devices.empty()) findDevices(false);
 	}
 
+	platform(const cl_platform_id platform_id, const cl_device_id device_id)
+	{
+		char platformName[1024]; oclFatal(clGetPlatformInfo(platform_id, CL_PLATFORM_NAME, 1024, platformName, nullptr));
+		char deviceName[1024]; oclFatal(clGetDeviceInfo(device_id, CL_DEVICE_NAME, 1024, deviceName, nullptr));
+		char deviceVendor[1024]; oclFatal(clGetDeviceInfo(device_id, CL_DEVICE_VENDOR, 1024, deviceVendor, nullptr));
+
+		std::ostringstream ss; ss << "device '" << deviceName << "', vendor '" << deviceVendor << "', platform '" << platformName << "'";
+		deviceDesc device;
+		device.platform_id = platform_id;
+		device.device_id = device_id;
+		device.name = ss.str();
+		_devices.push_back(device);
+	}
+
 public:
 	virtual ~platform()
 	{
@@ -192,6 +207,8 @@ public:
 class device : oclObject
 {
 private:
+	enum class EVendor { Unknown, NVIDIA, AMD, INTEL };
+
 	const cl_platform_id _platform;
 	const cl_device_id _device;
 #if defined(ocl_debug)
@@ -207,13 +224,12 @@ private:
 	cl_ulong _localMemSize = 0;
 	size_t _maxWorkGroupSize = 0;
 	cl_ulong _timerResolution = 0;
+	EVendor _vendor = EVendor::Unknown;
 	cl_context _context = nullptr;
 	cl_command_queue _queueF = nullptr;
 	cl_command_queue _queueP = nullptr;
 	cl_command_queue _queue = nullptr;
 	cl_program _program = nullptr;
-
-	enum class EVendor { Unknown, NVIDIA, AMD, INTEL };
 
 	struct profile
 	{
@@ -227,7 +243,7 @@ private:
 	std::map<cl_kernel, profile> _profileMap;
 
 public:
-	device(const platform & parent, const size_t d) : _platform(parent.getPlatform(d)), _device(parent.getDevice(d))
+	device(const platform & parent, const size_t d, const bool verbose) : _platform(parent.getPlatform(d)), _device(parent.getDevice(d))
 #if defined(ocl_debug)
 		, _d(d)
 #endif
@@ -240,6 +256,7 @@ public:
 		char deviceVendor[1024]; oclFatal(clGetDeviceInfo(_device, CL_DEVICE_VENDOR, 1024, deviceVendor, nullptr));
 		char deviceVersion[1024]; oclFatal(clGetDeviceInfo(_device, CL_DEVICE_VERSION, 1024, deviceVersion, nullptr));
 		char driverVersion[1024]; oclFatal(clGetDeviceInfo(_device, CL_DRIVER_VERSION, 1024, driverVersion, nullptr));
+		_vendor = getVendor(deviceVendor);
 
 		cl_uint computeUnits; oclFatal(clGetDeviceInfo(_device, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(computeUnits), &computeUnits, nullptr));
 		cl_uint maxClockFrequency; oclFatal(clGetDeviceInfo(_device, CL_DEVICE_MAX_CLOCK_FREQUENCY, sizeof(maxClockFrequency), &maxClockFrequency, nullptr));
@@ -251,11 +268,17 @@ public:
 		oclFatal(clGetDeviceInfo(_device, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(_maxWorkGroupSize), &_maxWorkGroupSize, nullptr));
 		oclFatal(clGetDeviceInfo(_device, CL_DEVICE_PROFILING_TIMER_RESOLUTION, sizeof(_timerResolution), &_timerResolution, nullptr));
 
-		std::cout << "Running on device '" << deviceName << "', vendor '" << deviceVendor
-			<< "', version '" << deviceVersion << "', driver '" << driverVersion << "'" << std::endl;
-		std::cout << computeUnits << " compUnits @ " << maxClockFrequency << "MHz, mem = " << (memSize >> 20) << "MB, cache = "
-			<< (memCacheSize >> 10) << "kB, cacheLine = " << memCacheLineSize << "B, localMem = " << (_localMemSize >> 10)
-			<< "kB, constMem = " << (memConstSize >> 10) << "kB, maxWorkGroup = " << _maxWorkGroupSize << "." << std::endl << std::endl;
+		if (verbose)
+		{
+			std::cout << "Running on device '" << deviceName << "', vendor '" << deviceVendor
+				<< "', version '" << deviceVersion << "', driver '" << driverVersion << "'";
+// #if defined(ocl_debug)
+			std::cout << std::endl << computeUnits << " compUnits @ " << maxClockFrequency << "MHz, mem = " << (memSize >> 20) << "MB, cache = "
+			 	<< (memCacheSize >> 10) << "kB, cacheLine = " << memCacheLineSize << "B, localMem = " << (_localMemSize >> 10)
+			 	<< "KB, constMem = " << (memConstSize >> 10) << "kB, maxWorkGroup = " << _maxWorkGroupSize << ".";
+// #endif
+			std::cout << std::endl << std::endl;
+		}
 
 		const cl_context_properties contextProperties[3] = { CL_CONTEXT_PLATFORM, (cl_context_properties)_platform, 0 };
 		cl_int err_cc;
@@ -267,7 +290,7 @@ public:
 		_queue = _queueF;	// default queue is fast
 		oclFatal(err_ccq);
 
-		if (getVendor(deviceVendor) != EVendor::NVIDIA) _isSync = true;
+		if (_vendor != EVendor::NVIDIA) _isSync = true;
 	}
 
 public:
@@ -364,13 +387,14 @@ public:
 		char pgmOptions[1024];
 		strcpy(pgmOptions, "");
 #if defined(ocl_debug)
-		// strcat(pgmOptions, " -cl-nv-verbose");
+		if (_vendor == EVendor::NVIDIA) strcat(pgmOptions, " -cl-nv-verbose");
+		if (_vendor == EVendor::AMD) strcat(pgmOptions, " -save-temps=.");
 #endif
 		const cl_int err = clBuildProgram(_program, 1, &_device, pgmOptions, nullptr, nullptr);
 
 #if !defined(ocl_debug)
 		if (err != CL_SUCCESS)
-#endif		
+#endif
 		{
 			size_t logSize; clGetProgramBuildInfo(_program, _device, CL_PROGRAM_BUILD_LOG, 0, nullptr, &logSize);
 			if (logSize > 2)
@@ -378,12 +402,13 @@ public:
 				std::vector<char> buildLog(logSize + 1);
 				clGetProgramBuildInfo(_program, _device, CL_PROGRAM_BUILD_LOG, logSize, buildLog.data(), nullptr);
 				buildLog[logSize] = '\0';
-				std::ostringstream ss; ss << buildLog.data() << std::endl;
-				std::cout << ss.str();
 #if defined(ocl_debug)
 				std::ofstream fileOut("pgm.log"); 
 				fileOut << buildLog.data() << std::endl;
 				fileOut.close();
+#else
+				std::ostringstream ss; ss << buildLog.data() << std::endl;
+				std::cout << ss.str();
 #endif
 			}
 		}
@@ -394,10 +419,10 @@ public:
 		size_t binSize; clGetProgramInfo(_program, CL_PROGRAM_BINARY_SIZES, sizeof(size_t), &binSize, nullptr);
 		std::vector<char> binary(binSize);
 		clGetProgramInfo(_program, CL_PROGRAM_BINARIES, sizeof(char *), &binary, nullptr);
-		std::ofstream fileOut("pgm.bin", std::ios::binary);
+		std::ofstream fileOut((_vendor == EVendor::NVIDIA) ? "pgm.ptx" : "pgm.bin", std::ios::binary);
 		fileOut.write(binary.data(), std::streamsize(binSize));
 		fileOut.close();
-#endif	
+#endif
 	}
 
 public:
@@ -444,20 +469,20 @@ protected:
 	}
 
 protected:
-	void _readBuffer(cl_mem & mem, void * const ptr, const size_t size)
+	void _readBuffer(cl_mem & mem, void * const ptr, const size_t size, const size_t offset = 0)
 	{
 		// Fill the buffer with random numbers to generate an error even if clEnqueueReadBuffer fails without error.
 		char * const cptr = static_cast<char *>(ptr);
 		for (size_t i = 0; i < size; ++i) cptr[i] = static_cast<char>(std::rand());
 		_sync();
-		oclFatal(clEnqueueReadBuffer(_queue, mem, CL_TRUE, 0, size, ptr, 0, nullptr, nullptr));
+		oclFatal(clEnqueueReadBuffer(_queue, mem, CL_TRUE, offset, size, ptr, 0, nullptr, nullptr));
 	}
 
 protected:
-	void _writeBuffer(cl_mem & mem, const void * const ptr, const size_t size)
+	void _writeBuffer(cl_mem & mem, const void * const ptr, const size_t size, const size_t offset = 0)
 	{
 		_sync();
-		oclFatal(clEnqueueWriteBuffer(_queue, mem, CL_TRUE, 0, size, ptr, 0, nullptr, nullptr));
+		oclFatal(clEnqueueWriteBuffer(_queue, mem, CL_TRUE, offset, size, ptr, 0, nullptr, nullptr));
 	}
 
 protected:
@@ -465,7 +490,7 @@ protected:
 	{
 		cl_int err;
 		cl_kernel kernel = clCreateKernel(_program, kernelName, &err);
-		oclFatal(err);
+		oclFatal(err, kernelName);
 		_profileMap[kernel] = profile(kernelName);
 		return kernel;
 	}
@@ -477,7 +502,7 @@ protected:
 		{
 			oclFatal(clReleaseKernel(kernel));
 			kernel = nullptr;
-		}		
+		}
 	}
 
 protected:
@@ -507,7 +532,7 @@ protected:
 			if (_isSync)
 			{
 				++_syncCount;
-				if (_syncCount == 1024) _sync();
+				if (_syncCount == 16 * 1024) _sync();
 			}
 		}
 		else

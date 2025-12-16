@@ -1,5 +1,5 @@
 CC = g++ -m64 -std=c++17
-CFLAGS = -O2 -Wall -Wextra -fexceptions
+CFLAGS = -O2 -Wall -Wextra -Wsign-conversion -ffinite-math-only
 
 BIN_DIR = bin
 SRC_DIR = src
