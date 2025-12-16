@@ -37,8 +37,8 @@ inline bool prp_slow(const uint64_t p)
 }
 #endif
 
-typedef uint8_t		uint8;
-typedef int8_t		int8;
+typedef uint8_t		uint_8;
+typedef int8_t		int_8;
 typedef uint32_t	uint32;
 typedef uint64_t	uint64;
 
@@ -152,27 +152,26 @@ static void check(const uint64 k , const uint32 b, const int n)
 	mpz_clears(zp, zr, zt, nullptr);
 }
 
-static void test(const uint64 i_min, const uint64 i_max, const int n, const int log2_global_worksize, const uint8 * const wheel, const int8 * const kro_vector)
+static void test(const uint64 i_min, const uint64 i_max, const int n, const int log2_block_size, const uint_8 * const wheel, const int_8 * const kro_vector)
 {
-	const size_t global_worksize = size_t(1) << log2_global_worksize;
-	const size_t factors_loop = size_t(1) << 10;
-	const size_t N_2_factors_loop = (size_t(1) << (n - 1)) / factors_loop;
-	const size_t prime_size = global_worksize;
+	const size_t block_size = size_t(1) << log2_block_size;
+	const size_t factors_block = size_t(1) << 10;
+	const size_t N_2_factors_block = (size_t(1) << (n - 1)) / factors_block;
 	const int g_n = n + 1;
 
-	uint64 * const k_vector = new uint64[prime_size];
-	uint64 * const q_vector = new uint64[prime_size];
-	uint64 * const ext_vector = new uint64[prime_size];
-	uint64 * const c_vector = new uint64[prime_size];
+	uint64 * const k_vector = new uint64[block_size];
+	uint64 * const q_vector = new uint64[block_size];
+	uint64 * const ext_vector = new uint64[block_size];
+	uint64 * const c_vector = new uint64[block_size];
 
 	uint32 prime_count = 0;
 
 	for (uint64 i = i_min; i <= i_max; ++i)
 	{
 		// generate_primes
-		for (uint64 id = 0; id < global_worksize; ++id)
+		for (uint64 id = 0; id < block_size; ++id)
 		{
-			const uint64 j = (i << log2_global_worksize) | id;
+			const uint64 j = (i << log2_block_size) | id;
 			const uint64 k = 15 * (j / 8) + wheel[j % 8];
 
 			// one is the Montgomery form of 1: 2^64 mod p = (2^64 - p) mod p
@@ -196,7 +195,7 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 		std::cout << i << ": " << prime_count << " primes" << std::endl;
 
 		// init_factors
-		for (uint64 id = 0; id < global_worksize; ++id)
+		for (uint64 id = 0; id < block_size; ++id)
 		{
 			if (id >= prime_count) break;
 
@@ -236,11 +235,11 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 		}
 
 		// check_factors
-		for (size_t j = 0; j < N_2_factors_loop; ++j)
+		for (size_t j = 0; j < N_2_factors_block; ++j)
 		{
-			std::cout << j << " / " << N_2_factors_loop << std::endl;
+			// std::cout << j << " / " << N_2_factors_block << std::endl;
 
-			for (uint64 id = 0; id < global_worksize; ++id)
+			for (uint64 id = 0; id < block_size; ++id)
 			{
 				if (id >= prime_count) break;
 
@@ -253,7 +252,7 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 #ifdef CHECK
 				uint64 c0sq_check = Montgomery2int(c0sq, p, q);
 #endif
-				for (size_t l = 0; l < factors_loop; ++l)
+				for (size_t l = 0; l < factors_block; ++l)
 				{
 					const uint64 b = (c % 2 == 0) ? c : p - c;
 					const bool found = (b <= 2000000000);
@@ -286,14 +285,14 @@ int main()
 	try
 	{
 		// Kronecker symbols (i/j) for odd j <= 255.
-		int8 kro_vector[128 * 256];
+		int_8 kro_vector[128 * 256];
 		mpz_t zj; mpz_init(zj);
 		for (uint32_t j = 3; j < 256; j += 2)
 		{
 			mpz_set_ui(zj, j);
 			for (uint32_t i = 0; i < j; ++i)
 			{
-				kro_vector[256 * ((j - 3) / 2) + i] = int8(mpz_ui_kronecker(i, zj));
+				kro_vector[256 * ((j - 3) / 2) + i] = int_8(mpz_ui_kronecker(i, zj));
 			}
 		}
 		mpz_clear(zj);
@@ -301,28 +300,28 @@ int main()
 		const int n = 23;
 
 		// gcd(p mod 15, 15) = 1: 8 solutions
-		uint8 wheel[8];
+		uint_8 wheel[8];
 		size_t i = 0;
 		for (uint64 k = 0; k < 15; ++k)
 		{
 			const uint64 p = (k << (n + 1)) | 1;
 			if ((p % 3 == 0) || (p % 5 == 0)) continue;
-			wheel[i] = uint8(k);
+			wheel[i] = uint_8(k);
 			++i;
 		}
 		if (i != 8) throw std::runtime_error("Error: wheel count.");
 
-		const int log2_global_worksize = 22;
+		const int log2_block_size = 12;
 		const double unit = 1e15;
 
 		const uint32 p_min = 100, p_max = p_min + 1;	// 1 <= p < 18446
 
-		const double f = unit * 8.0 / 15 / std::pow(2.0, double(n + 1 + log2_global_worksize));
+		const double f = unit * 8.0 / 15 / std::pow(2.0, double(log2_block_size + n + 1));
 		const uint64 i_min = uint64(floor(p_min * f)), i_max = uint64(ceil(p_max * f));
 
 		mpz_t zp_min, zp_max; mpz_inits(zp_min, zp_max, nullptr);
 
-		const uint64 j_min = uint64(i_min) << log2_global_worksize, j_max = uint64(i_max) << log2_global_worksize;
+		const uint64 j_min = uint64(i_min) << log2_block_size, j_max = uint64(i_max) << log2_block_size;
 		const uint64 k_min = 15 * (j_min / 8) + wheel[j_min % 8], k_max = 15 * (j_max / 8) + wheel[j_max % 8];
 
 		mpz_set_u64(zp_min, k_min); mpz_mul_2exp(zp_min, zp_min, n + 1); mpz_add_ui(zp_min, zp_min, 1);
@@ -335,7 +334,7 @@ int main()
 
 		std::cout << "For i = " << i_min << " to " << i_max << std::endl;
 
-		test(i_min, i_max, n, log2_global_worksize, wheel, kro_vector);
+		test(i_min, i_max, n, log2_block_size, wheel, kro_vector);
 	}
 	catch (const std::runtime_error & e)
 	{

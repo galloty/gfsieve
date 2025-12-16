@@ -39,8 +39,8 @@ inline bool prp_slow(const __uint128_t p)
 }
 #endif
 
-typedef uint8_t		uint8;
-typedef int8_t		int8;
+typedef uint8_t		uint_8;
+typedef int8_t		int_8;
 typedef uint16_t	uint16;
 typedef uint32_t	uint32;
 typedef uint64_t	uint64;
@@ -120,7 +120,7 @@ inline uint80 shr80(const uint80 x, const int s)
 	return r;
 }
 
-inline void mul80_wide(const uint80 x, const uint80 y, uint80 & lo, uint80 & hi)
+inline void mul80_wide(const uint80 x, const uint80 y, uint80 * const lo, uint80 * const hi)
 {
 	const uint32 a0 = (uint32)(x.s0), a1 = (uint32)(x.s0 >> 32); const uint16 a2 = x.s1;
 	const uint32 b0 = (uint32)(y.s0), b1 = (uint32)(y.s0 >> 32); const uint16 b2 = y.s1;
@@ -134,11 +134,11 @@ inline void mul80_wide(const uint80 x, const uint80 y, uint80 & lo, uint80 & hi)
 	const uint64 c34 = hi32x(a1b1) + a1b2 + a2b1 + hi32x(c23);
 	const uint32 c0 = lo32(a0b0), c1 = lo32(c12), c2 = lo32(c23), c3 = lo32(c34), c4 = a2b2 + hi32(c34);
 
-	lo.s0 = upsample(c1, c0); lo.s1 = uint16(c2);
-	hi.s0 = upsample((c4 << 16) | (c3 >> 16), (c3 << 16) | (c2 >> 16)); hi.s1 = uint16(c4 >> 16);
+	lo->s0 = upsample(c1, c0); lo->s1 = (uint16)(c2);
+	hi->s0 = upsample((c4 << 16) | (c3 >> 16), (c3 << 16) | (c2 >> 16)); hi->s1 = (uint16)(c4 >> 16);
 }
 
-inline void sqr80_wide(const uint80 x, uint80 & lo, uint80 & hi)
+inline void sqr80_wide(const uint80 x, uint80 * const lo, uint80 * const hi)
 {
 	const uint32 a0 = (uint32)(x.s0), a1 = (uint32)(x.s0 >> 32); const uint16 a2 = x.s1;
 
@@ -151,8 +151,8 @@ inline void sqr80_wide(const uint80 x, uint80 & lo, uint80 & hi)
 	const uint64 c34 = hi32x(b11) + 2 * b12 + hi32x(c23);
 	const uint32 c0 = lo32(b00), c1 = lo32(c12), c2 = lo32(c23), c3 = lo32(c34), c4 = b22 + hi32(c34);
 
-	lo.s0 = upsample(c1, c0); lo.s1 = uint16(c2);
-	hi.s0 = upsample((c4 << 16) | (c3 >> 16), (c3 << 16) | (c2 >> 16)); hi.s1 = uint16(c4 >> 16);
+	lo->s0 = upsample(c1, c0); lo->s1 = (uint16)(c2);
+	hi->s0 = upsample((c4 << 16) | (c3 >> 16), (c3 << 16) | (c2 >> 16)); hi->s1 = (uint16)(c4 >> 16);
 }
 
 inline uint80 mul80(const uint80 x, const uint80 y)
@@ -184,7 +184,7 @@ inline uint80 mul80_hi(const uint80 x, const uint80 y)
 	const uint64 c34 = hi32x(a1b1) + a1b2 + a2b1 + hi32x(c23);
 	const uint32 c2 = lo32(c23), c3 = lo32(c34), c4 = a2b2 + hi32(c34);
 
-	uint80 r; r.s0 = upsample((c4 << 16) | (c3 >> 16), (c3 << 16) | (c2 >> 16)); r.s1 = uint16(c4 >> 16);
+	uint80 r; r.s0 = upsample((c4 << 16) | (c3 >> 16), (c3 << 16) | (c2 >> 16)); r.s1 = (uint16)(c4 >> 16);
 	return r;
 }
 
@@ -301,13 +301,13 @@ inline uint80 sub_mod(const uint80 a, const uint80 b, const uint80 p)
 // Montgomery modular multiplication
 inline uint80 mul_mod(const uint80 a, const uint80 b, const uint80 p, const uint80 q)
 {
-	uint80 ab_l, ab_h; mul80_wide(a, b, ab_l, ab_h);
+	uint80 ab_l, ab_h; mul80_wide(a, b, &ab_l, &ab_h);
 	return sub_mod(ab_h, mul80_hi(mul80(ab_l, q), p), p);
 }
 
 inline uint80 sqr_mod(const uint80 a, const uint80 p, const uint80 q)
 {
-	uint80 a2_l, a2_h; sqr80_wide(a, a2_l, a2_h);
+	uint80 a2_l, a2_h; sqr80_wide(a, &a2_l, &a2_h);
 	return sub_mod(a2_h, mul80_hi(mul80(a2_l, q), p), p);
 }
 
@@ -349,7 +349,7 @@ inline uint80 pow_mod(const uint80 a, const uint64 e, const uint80 p, const uint
 // 2^{(p - 1)/2} ?= +/-1 mod p
 inline bool prp(const uint80 p, const uint80 q, const uint80 one)
 {
-	uint80 e; e.s0 = (p.s0 >> 1) | (uint64(p.s1) << 63); e.s1 = p.s1 >> 1;
+	uint80 e; e.s0 = (p.s0 >> 1) | ((uint64)(p.s1) << 63); e.s1 = p.s1 >> 1;
 	int b = ilog2_80(e) - 1;
 	uint80 r = dup_mod(one, p);	// 2 = 1 + 1
 	r = dup_mod(r, p);			// 2 * 2 = 2 + 2
@@ -402,21 +402,20 @@ static void check(const uint64 k , const uint32 b, const int n)
 	mpz_clears(zp, zr, zt, nullptr);
 }
 
-static void test(const uint64 i_min, const uint64 i_max, const int n, const int log2_global_worksize, const uint8 * const wheel, const int8 * const kro_vector)
+static void test(const uint64 i_min, const uint64 i_max, const int n, const int log2_block_size, const uint_8 * const wheel, const int_8 * const kro_vector)
 {
-	const size_t global_worksize = size_t(1) << log2_global_worksize;
-	const size_t factors_loop = size_t(1) << 10;
-	const size_t N_2_factors_loop = (size_t(1) << (n - 1)) / factors_loop;
-	const size_t prime_size = global_worksize;
+	const size_t block_size = size_t(1) << log2_block_size;
+	const size_t factors_block = size_t(1) << 10;
+	const size_t N_2_factors_block = (size_t(1) << (n - 1)) / factors_block;
 	const int g_n = n + 1;
 
-	uint64 * const k_vector = new uint64[prime_size];
-	uint80 * const q_vector = new uint80[prime_size];
-	uint80 * const ext_vector = new uint80[prime_size];
-	uint80 * const c_vector = new uint80[prime_size];
+	uint64 * const k_vector = new uint64[block_size];
+	uint80 * const q_vector = new uint80[block_size];
+	uint80 * const ext_vector = new uint80[block_size];
+	uint80 * const c_vector = new uint80[block_size];
 #ifdef CHECK
-	uint80 * const c0sqm_vector = new uint80[prime_size];
-	uint80 * const qs_vector = new uint80[prime_size];
+	uint80 * const c0sqm_vector = new uint80[block_size];
+	uint80 * const qs_vector = new uint80[block_size];
 #endif
 
 	uint32 prime_count = 0;
@@ -424,12 +423,12 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 	for (uint64 i = i_min; i <= i_max; ++i)
 	{
 		// generate_primes
-		for (uint64 id = 0; id < global_worksize; ++id)
+		for (uint64 id = 0; id < block_size; ++id)
 		{
-			const uint64 j = (i << log2_global_worksize) | id;
+			const uint64 j = (i << log2_block_size) | id;
 			const uint64 k = 15 * (j / 8) + wheel[j % 8];
 
-			uint80 p; p.s0 = (k << g_n) | 1; p.s1 = uint16(k >> (64 - g_n));
+			uint80 p; p.s0 = (k << g_n) | 1; p.s1 = (uint16)(k >> (64 - g_n));
 			const uint80 q = invert(p);
 			// one is the Montgomery form of 1: 2^80 mod p
 			const uint80 one = modinv80(p);
@@ -454,34 +453,34 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 		std::cout << i << ": " << prime_count << " primes" << std::endl;
 
 		// init_factors
-		for (uint64 id = 0; id < global_worksize; ++id)
+		for (uint64 id = 0; id < block_size; ++id)
 		{
 			if (id >= prime_count) break;
 
 			const uint64 k = k_vector[id];
 			const uint80 q = q_vector[id], one = ext_vector[id];
 
-			uint80 p; p.s0 = (k << g_n) | 1; p.s1 = uint16(k >> (64 - g_n));
+			uint80 p; p.s0 = (k << g_n) | 1; p.s1 = (uint16)(k >> (64 - g_n));
 			const uint80 two = dup_mod(one, p);
 
 			// p = 1 (mod 4). If a is odd then (a/p) = (p/a) = ({p mod a}/a)
 
 			uint32 a = 3; uint80 am = add_mod(two, one, p);
-			const uint32 pmod3 = ((uint32(k % 3) << g_n) | 1) % 3;
+			const uint32 pmod3 = (((uint32)(k % 3) << g_n) | 1) % 3;
 			if (pmod3 != 2)
 			{
 				a += 2; am = add_mod(am, two, p);
-				const uint32 pmod5 = ((uint32(k % 5) << g_n) | 1) % 5;
+				const uint32 pmod5 = (((uint32)(k % 5) << g_n) | 1) % 5;
 				if (kro_vector[256 * ((5 - 3) / 2) + pmod5] >= 0)
 				{
 					a += 2; am = add_mod(am, two, p);
-					const uint32 pmod7 = ((uint32(k % 7) << g_n) | 1) % 7;
+					const uint32 pmod7 = (((uint32)(k % 7) << g_n) | 1) % 7;
 					if (kro_vector[256 * ((7 - 3) / 2) + pmod7] >= 0)
 					{
 						a += 4; am = add_mod(am, dup_mod(two, p), p);
 						while (a < 256)
 						{
-							const uint32 pmoda = uint32((((k % a) << g_n) | 1) % a);
+							const uint32 pmoda = (uint32)((((k % a) << g_n) | 1) % a);
 							if (kro_vector[256 * ((a - 3) / 2) + pmoda] < 0) break;
 							a += 2; am = add_mod(am, two, p);
 						}
@@ -509,11 +508,11 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 		}
 
 		// check_factors
-		for (size_t j = 0; j < N_2_factors_loop; ++j)
+		for (size_t j = 0; j < N_2_factors_block; ++j)
 		{
-			std::cout << j << " / " << N_2_factors_loop << std::endl;
+			// std::cout << j << " / " << N_2_factors_block << std::endl;
 
-			for (uint64 id = 0; id < global_worksize; ++id)
+			for (uint64 id = 0; id < block_size; ++id)
 			{
 				if (id >= prime_count) break;
 
@@ -521,13 +520,13 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 				if (z80(c)) continue;
 
 				const uint64 k = k_vector[id];
-				uint80 p; p.s0 = (k << g_n) | 1; p.s1 = uint32(k >> (64 - g_n));
+				uint80 p; p.s0 = (k << g_n) | 1; p.s1 = (uint16)(k >> (64 - g_n));
 
 				const uint80 c0sq = ext_vector[id], c0sqp = q_vector[id];
 #ifdef CHECK
 				const uint80 c0sqm = c0sqm_vector[id], q = qs_vector[id];
 #endif
-				for (size_t l = 0; l < factors_loop; ++l)
+				for (size_t l = 0; l < factors_block; ++l)
 				{
 					const uint80 b = (c.s0 % 2 == 0) ? c : sub80(p, c);
 					const bool found = ((b.s1 == 0) && (b.s0 <= 2000000000));
@@ -564,14 +563,14 @@ int main()
 	try
 	{
 		// Kronecker symbols (i/j) for odd j <= 255.
-		int8 kro_vector[128 * 256];
+		int_8 kro_vector[128 * 256];
 		mpz_t zj; mpz_init(zj);
 		for (uint32_t j = 3; j < 256; j += 2)
 		{
 			mpz_set_ui(zj, j);
 			for (uint32_t i = 0; i < j; ++i)
 			{
-				kro_vector[256 * ((j - 3) / 2) + i] = int8(mpz_ui_kronecker(i, zj));
+				kro_vector[256 * ((j - 3) / 2) + i] = int_8(mpz_ui_kronecker(i, zj));
 			}
 		}
 		mpz_clear(zj);
@@ -579,28 +578,28 @@ int main()
 		const int n = 23;
 
 		// gcd(p mod 15, 15) = 1: 8 solutions
-		uint8 wheel[8];
+		uint_8 wheel[8];
 		size_t i = 0;
 		for (uint64 k = 0; k < 15; ++k)
 		{
 			const uint64 p = (k << (n + 1)) | 1;
 			if ((p % 3 == 0) || (p % 5 == 0)) continue;
-			wheel[i] = uint8(k);
+			wheel[i] = uint_8(k);
 			++i;
 		}
 		if (i != 8) throw std::runtime_error("Error: wheel count.");
 
-		const int log2_global_worksize = 22;
+		const int log2_block_size = 12;
 		const double unit = 1e15;
 
 		const uint32 p_min = 20000, p_max = p_min + 1;	// 18446 <= p <= 600000000
 
-		const double f = unit * 8.0 / 15 / std::pow(2.0, double(n + 1 + log2_global_worksize));
+		const double f = unit * 8.0 / 15 / std::pow(2.0, double(log2_block_size + n + 1));
 		const uint64 i_min = uint64(floor(p_min * f)), i_max = uint64(ceil(p_max * f));
 
 		mpz_t zp_min, zp_max; mpz_inits(zp_min, zp_max, nullptr);
 
-		const uint64 j_min = uint64(i_min) << log2_global_worksize, j_max = uint64(i_max) << log2_global_worksize;
+		const uint64 j_min = uint64(i_min) << log2_block_size, j_max = uint64(i_max) << log2_block_size;
 		const uint64 k_min = 15 * (j_min / 8) + wheel[j_min % 8], k_max = 15 * (j_max / 8) + wheel[j_max % 8];
 
 		mpz_set_u64(zp_min, k_min); mpz_mul_2exp(zp_min, zp_min, n + 1); mpz_add_ui(zp_min, zp_min, 1);
@@ -613,7 +612,7 @@ int main()
 
 		std::cout << "For i = " << i_min << " to " << i_max << std::endl;
 
-		test(i_min, i_max, n, log2_global_worksize, wheel, kro_vector);
+		test(i_min, i_max, n, log2_block_size, wheel, kro_vector);
 	}
 	catch (const std::runtime_error & e)
 	{
