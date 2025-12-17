@@ -126,7 +126,7 @@ public:
 		platform pfm;
 		pfm.displayDevices();
 
-		// if (args.size() < 3) return;
+		if (args.size() < 3) return;
 
 		// parse args
 		const int n = (args.size() > 0) ? std::atoi(args[0].c_str()) : 23;

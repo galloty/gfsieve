@@ -51,7 +51,7 @@ protected:
 	int _n = 0;
 	uint_8 _wheel[8];
 	static constexpr size_t _factors_block = size_t(1) << 14u;
-	static constexpr int _log2_block_size = 12;	// 22; => > 285000 primes
+	static constexpr int _log2_block_size = 22;	// => > 285000 primes
 	timer::time _start_time;
 	std::string _extension;
 	std::vector<uint64_2> _factor;
@@ -160,7 +160,7 @@ private:
 		std::cout << factor_count << " factor(s)";
 		if (elapsed_time > 10)
 		{
-			std::cout << ", " << std::max(int(86400 / 1e15 * dp / elapsed_time), 1) << "P/day, time = " << timer::format_time(elapsed_time);
+			std::cout << ", " << std::max(int(dp * 86400 / elapsed_time), 1) << "P/day, time = " << timer::format_time(elapsed_time);
 		}
 		else std::cout << "                      ";
 		std::cout << std::endl;
@@ -318,12 +318,12 @@ public:
 			if (_quit) break;
 
 			eng.generate_primes(block_size, i);
-			 const size_t primeCount = eng.read_prime_count();
-			 std::cout << i << ": " << primeCount << " primes" << std::endl;
+			// const size_t primeCount = eng.read_prime_count();
+			// std::cout << i << ": " << primeCount << " primes" << std::endl;
 			eng.init_factors(prime_size);
 			eng.check_factors(prime_size, N_2_factors_block);
-			 const size_t factorCount = eng.read_factor_count();
-			 std::cout << factorCount << " factor(s)" << std::endl;
+			// const size_t factorCount = eng.read_factor_count();
+			// std::cout << factorCount << " factor(s)" << std::endl;
 			eng.clear_prime_count();
 			++cnt;
 
@@ -339,14 +339,14 @@ public:
 			if (timer::diff_time(current_time, record_time) > 300)
 			{
 				record_time = current_time;
-				save_factors(eng, cnt, (i - i_start) * std::pow(2.0, double(n + 1 + _log2_block_size)));
+				save_factors(eng, cnt, (i - i_start) / f);
 			}
 		}
 
 		if (cnt > 0)
 		{
 			std::cout << " terminating...         \r";
-			save_factors(eng, cnt, (i_max - i_start) * std::pow(2.0, double(n + 1 + _log2_block_size)));
+			save_factors(eng, cnt, (i_max - i_start) / f);
 		}
 
 		// eng.displayProfiles(1);
