@@ -28,17 +28,17 @@ public:
 	engine(const platform & pfm, const size_t d) : device(pfm, d, true) {}
 	virtual ~engine() {}
 
-	void alloc_memory(const size_t block_size, const size_t factor_size, const bool is64)
+	void alloc_memory(const size_t prime_size, const size_t factor_size, const bool is64)
 	{
 #if defined(ocl_debug)
 		std::cerr << "Alloc gpu memory." << std::endl;
 #endif
 		const size_t type_size = is64 ? sizeof(uint64) : sizeof(uint64_2);
 		_kro_vector = _createBuffer(CL_MEM_READ_ONLY, 128 * 256 * sizeof(int_8));
-		_k_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(uint64) * block_size);
-		_q_vector = _createBuffer(CL_MEM_READ_WRITE, type_size * block_size);
-		_ext_vector = _createBuffer(CL_MEM_READ_WRITE, type_size * block_size);
-		_c_vector = _createBuffer(CL_MEM_READ_WRITE, type_size * block_size);
+		_k_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(uint64) * prime_size);
+		_q_vector = _createBuffer(CL_MEM_READ_WRITE, type_size * prime_size);
+		_ext_vector = _createBuffer(CL_MEM_READ_WRITE, type_size * prime_size);
+		_c_vector = _createBuffer(CL_MEM_READ_WRITE, type_size * prime_size);
 		_factor_vector = _createBuffer(CL_MEM_READ_WRITE, sizeof(uint64_2) * factor_size, false);
 		_prime_count = _createBuffer(CL_MEM_READ_WRITE, sizeof(uint32));
 		_factor_count = _createBuffer(CL_MEM_READ_WRITE, sizeof(uint32));

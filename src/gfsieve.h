@@ -50,8 +50,8 @@ protected:
 	size_t _max_factor_size = 0;
 	int _n = 0;
 	uint_8 _wheel[8];
-	static constexpr size_t _factors_block = size_t(1) << 10u;
-	static constexpr int _log2_block_size = 12;
+	static constexpr size_t _factors_block = size_t(1) << 14u;
+	static constexpr int _log2_block_size = 12;	// 22; => > 285000 primes
 	timer::time _start_time;
 	std::string _extension;
 	std::vector<uint64_2> _factor;
@@ -119,9 +119,11 @@ private:
 		{
 			if (!read_OpenCL("ocl/sieve79.cl", "src/ocl/sieve79.h", "src_ocl_sieve79", src)) src << src_ocl_sieve79;
 		}
-// std::cout << src.str() << std::endl;
+
 		eng.loadProgram(src.str());
-		eng.alloc_memory(size_t(1) << _log2_block_size, _max_factor_size, is64);
+		// prime_size <= 15/8 * 2 / log(1e15) * block_size = 0.1086 * block_size < 0.25 * block_size
+		const size_t prime_size = (size_t(1) << _log2_block_size) / 4;
+		eng.alloc_memory(prime_size, _max_factor_size, is64);
 		eng.create_kernels();
 
 		// Kronecker symbols (i/j) for odd j <= 255.
@@ -248,6 +250,12 @@ private:
 		}
 	}
 
+	uint64 get_k(const uint64 i) const
+	{
+		const uint64 j = i << _log2_block_size;
+		return 15 * (j / 8) + _wheel[j % 8];
+	}
+
 public:
 	bool check(engine & eng, const int n, const uint32_t p_min, const uint32_t p_max, const bool display)
 	{
@@ -290,23 +298,20 @@ public:
 
 		mpz_t zp_min, zp_max; mpz_inits(zp_min, zp_max, nullptr);
 
-		const uint64 j_min = uint64(i_start) << _log2_block_size, j_max = uint64(i_max) << _log2_block_size;
-		const uint64 k_min = 15 * (j_min / 8) + _wheel[j_min % 8], k_max = 15 * (j_max / 8) + _wheel[j_max % 8];
-
-		mpz_set_u64(zp_min, k_min); mpz_mul_2exp(zp_min, zp_min, mp_bitcnt_t(n + 1)); mpz_add_ui(zp_min, zp_min, 1);
-		mpz_set_u64(zp_max, k_max); mpz_mul_2exp(zp_max, zp_max, mp_bitcnt_t(n + 1)); mpz_add_ui(zp_max, zp_max, 1);
+		mpz_set_u64(zp_min, get_k(i_start)); mpz_mul_2exp(zp_min, zp_min, mp_bitcnt_t(n + 1)); mpz_add_ui(zp_min, zp_min, 1);
+		mpz_set_u64(zp_max, get_k(i_max)); mpz_mul_2exp(zp_max, zp_max, mp_bitcnt_t(n + 1)); mpz_add_ui(zp_max, zp_max, 1);
 
 		char p_min_str[32], p_max_str[32]; mpz_get_str(p_min_str, 10, zp_min); mpz_get_str(p_max_str, 10, zp_max);
 		std::cout << ((cnt != 0) ? "Resuming from a checkpoint, t" : "T") << "esting n = " << n << " from " << p_min_str << " to " << p_max_str << std::endl;
 
 		mpz_clears(zp_min, zp_max, nullptr);
 
-		std::cout << "For i = " << i_start << " to " << i_max << std::endl;
+		std::cout << "For i = " << i_start << " to " << i_max - 1 << std::endl;
 
 		_start_time = timer::current_time();
 		timer::time display_time = _start_time, record_time = _start_time;
 
-		const size_t block_size = size_t(1) << _log2_block_size;
+		const size_t block_size = size_t(1) << _log2_block_size, prime_size = block_size / 4;
 
 		for (uint64 i = i_start; i < i_max; ++i)
 		{
@@ -315,8 +320,8 @@ public:
 			eng.generate_primes(block_size, i);
 			 const size_t primeCount = eng.read_prime_count();
 			 std::cout << i << ": " << primeCount << " primes" << std::endl;
-			eng.init_factors(block_size);
-			eng.check_factors(block_size, N_2_factors_block);
+			eng.init_factors(prime_size);
+			eng.check_factors(prime_size, N_2_factors_block);
 			 const size_t factorCount = eng.read_factor_count();
 			 std::cout << factorCount << " factor(s)" << std::endl;
 			eng.clear_prime_count();
@@ -334,14 +339,14 @@ public:
 			if (timer::diff_time(current_time, record_time) > 300)
 			{
 				record_time = current_time;
-				save_factors(eng, cnt, (i - i_start) * pow(2.0, double(n + 1 + _log2_block_size)));
+				save_factors(eng, cnt, (i - i_start) * std::pow(2.0, double(n + 1 + _log2_block_size)));
 			}
 		}
 
 		if (cnt > 0)
 		{
 			std::cout << " terminating...         \r";
-			save_factors(eng, cnt, (i_max - i_start) * pow(2.0, double(n + 1 + _log2_block_size)));
+			save_factors(eng, cnt, (i_max - i_start) * std::pow(2.0, double(n + 1 + _log2_block_size)));
 		}
 
 		// eng.displayProfiles(1);

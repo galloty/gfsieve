@@ -420,7 +420,7 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 
 	uint32 prime_count = 0;
 
-	for (uint64 i = i_min; i <= i_max; ++i)
+	for (uint64 i = i_min; i < i_max; ++i)
 	{
 		// generate_primes
 		for (uint64 id = 0; id < block_size; ++id)
@@ -450,7 +450,11 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 			}
 		}
 
-		std::cout << i << ": " << prime_count << " primes" << std::endl;
+		// p = 18446P: expected = 15/8 * 2 / log(18446e15) * block_size = 0.0845 * block_size
+		// p = 600e6P: expected = 15/8 * 2 / log(600e21) * block_size = 0.0685 * block_size
+		const double p = 15 / 8.0 * i * std::pow(2.0, double(log2_block_size + n + 1));
+		const double expected = 15 / 8.0 * std::pow(2.0, log2_block_size + 1) / log(p);
+		std::cout << i << ": " << prime_count << " primes (" << expected << ")" << std::endl;
 
 		// init_factors
 		for (uint64 id = 0; id < block_size; ++id)
@@ -595,11 +599,11 @@ int main()
 		const uint32 p_min = 20000, p_max = p_min + 1;	// 18446 <= p <= 600000000
 
 		const double f = unit * 8.0 / 15 / std::pow(2.0, double(log2_block_size + n + 1));
-		const uint64 i_min = uint64(floor(p_min * f)), i_max = uint64(ceil(p_max * f));
+		const uint64 i_min = uint64(std::floor(p_min * f)), i_max = uint64(std::ceil(p_max * f));
 
 		mpz_t zp_min, zp_max; mpz_inits(zp_min, zp_max, nullptr);
 
-		const uint64 j_min = uint64(i_min) << log2_block_size, j_max = uint64(i_max) << log2_block_size;
+		const uint64 j_min = i_min << log2_block_size, j_max = i_max << log2_block_size;
 		const uint64 k_min = 15 * (j_min / 8) + wheel[j_min % 8], k_max = 15 * (j_max / 8) + wheel[j_max % 8];
 
 		mpz_set_u64(zp_min, k_min); mpz_mul_2exp(zp_min, zp_min, n + 1); mpz_add_ui(zp_min, zp_min, 1);
@@ -610,7 +614,7 @@ int main()
 
 		mpz_clears(zp_min, zp_max, nullptr);
 
-		std::cout << "For i = " << i_min << " to " << i_max << std::endl;
+		std::cout << "For i = " << i_min << " to " << i_max - 1 << std::endl;
 
 		test(i_min, i_max, n, log2_block_size, wheel, kro_vector);
 	}
