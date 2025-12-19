@@ -131,7 +131,7 @@ public:
 		// parse args
 		const int n = (args.size() > 0) ? std::atoi(args[0].c_str()) : 23;
 		int p_min = (args.size() > 1) ? std::atoi(args[1].c_str()) : 20000;	// 18446P < 2^64 < 18447P
-		int p_max = (args.size() > 2) ? std::atoi(args[2].c_str()) : 20001;
+		int p_max = (args.size() > 2) ? std::atoi(args[2].c_str()) : p_min + 1;
 		size_t d = 0;
 		bool display = false;
 		for (size_t i = 3, size = args.size(); i < size; ++i)

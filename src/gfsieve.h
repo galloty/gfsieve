@@ -306,7 +306,9 @@ public:
 
 		mpz_clears(zp_min, zp_max, nullptr);
 
-		std::cout << "For i = " << i_start << " to " << i_max - 1 << std::endl;
+		// std::cout << "For i = " << i_start << " to " << i_max - 1 << std::endl;
+		const double log_p_min = std::log(get_k(i_start)) + (n + 1) * std::log(2), log_p_max = std::log(get_k(i_max)) + (n + 1) * std::log(2);
+		std::cout << "Expected number of factors : " << (std::log(log_p_max) - std::log(log_p_min)) * 1e9 << std::endl;
 
 		_start_time = timer::current_time();
 		timer::time display_time = _start_time, record_time = _start_time;

@@ -41,12 +41,6 @@ inline bool bittest_80(const uint80 x, const int b) { return (b >= 64) ? ((x.s1 
 inline uint32 lo32(const uint64 x) { return (uint32)(x); }
 inline uint32 hi32(const uint64 x) { return (uint32)(x >> 32); }
 
-inline uint64 lo32x(const uint64 x) { return (uint64)((uint32)(x)); }
-inline uint64 hi32x(const uint64 x) { return x >> 32; }
-
-inline uint32 mul16w(const uint16 x, const uint16 y) { return x * (uint32)(y); }
-inline uint64 mul32w(const uint32 x, const uint32 y) { return x * (uint64)(y); }
-
 inline bool eq80(const uint80 x, const uint80 y)	// x is equal to y
 {
 	return ((x.s1 == y.s1) && (x.s0 == y.s0));
@@ -66,19 +60,46 @@ inline bool z80(const uint80 x)	// x is equal to 0
 
 inline uint80 add80(const uint80 x, const uint80 y)
 {
-	uint80 r; r.s0 = x.s0 + y.s0; r.s1 = x.s1 + y.s1 + ((r.s0 < x.s0) ? 1 : 0);
+	uint80 r;
+#ifdef PTX_ASM
+	const uint32 xs1 = x.s1, ys1 = y.s1;
+	uint32 rs1;
+	asm volatile ("add.cc.u64 %0, %1, %2;" : "=l" (r.s0) : "l" (x.s0), "l" (y.s0));
+	asm volatile ("addc.u32 %0, %1, %2;" : "=r" (rs1) : "r" (xs1), "r" (ys1));
+	r.s1 = (uint16)(rs1);
+#else
+	r.s0 = x.s0 + y.s0; r.s1 = x.s1 + y.s1 + ((r.s0 < x.s0) ? 1 : 0);
+#endif
 	return r;
 }
 
 inline uint80 sub80(const uint80 x, const uint80 y)
 {
-	uint80 r; r.s0 = x.s0 - y.s0; r.s1 = x.s1 - y.s1 - ((x.s0 < y.s0) ? 1 : 0);
+	uint80 r;
+#ifdef PTX_ASM
+	const uint32 xs1 = x.s1, ys1 = y.s1;
+	uint32 rs1;
+	asm volatile ("sub.cc.u64 %0, %1, %2;" : "=l" (r.s0) : "l" (x.s0), "l" (y.s0));
+	asm volatile ("subc.u32 %0, %1, %2;" : "=r" (rs1) : "r" (xs1), "r" (ys1));
+	r.s1 = (uint16)(rs1);
+#else
+	 r.s0 = x.s0 - y.s0; r.s1 = x.s1 - y.s1 - ((x.s0 < y.s0) ? 1 : 0);
+#endif
 	return r;
 }
 
 inline uint80 neg80(const uint80 x)
 {
-	uint80 r; r.s0 = -x.s0; r.s1 = -x.s1 - ((x.s0 != 0) ? 1 : 0);
+	uint80 r;
+#ifdef PTX_ASM
+	const uint32 xs1 = x.s1;
+	uint32 rs1;
+	asm volatile ("sub.cc.u64 %0, 0, %1;" : "=l" (r.s0) : "l" (x.s0));
+	asm volatile ("subc.u32 %0, 0, %1;" : "=r" (rs1) : "r" (xs1));
+	r.s1 = (uint16)(rs1);
+#else
+	r.s0 = -x.s0; r.s1 = -x.s1 - ((x.s0 != 0) ? 1 : 0);
+#endif
 	return r;
 }
 
@@ -86,82 +107,84 @@ inline uint80 neg80(const uint80 x)
 inline uint80 shl80(const uint80 x, const int s)
 {
 	const uint16 rs1 = (s < 16) ? (x.s1 << s) : 0;
-	uint80 r; r.s1 = rs1 | (uint16)(x.s0 >> (64 - s)); r.s0 = x.s0 << s;
+	uint80 r; r.s0 = x.s0 << s; r.s1 = rs1 | (uint16)(x.s0 >> (64 - s));
 	return r;
 }
 
 // 0 < s < 64
 inline uint80 shr80(const uint80 x, const int s)
 {
-	uint80 r; r.s0 = (x.s0 >> s) | ((uint64)(x.s1) << (64 - s)); r.s1 = (s < 16) ? (x.s1 >> s) : 0;
+	const uint16 rs1 = (s < 16) ? (x.s1 >> s) : 0;
+	uint80 r; r.s0 = (x.s0 >> s) | ((uint64)(x.s1) << (64 - s)); r.s1 = rs1;
+	return r;
+}
+
+typedef struct _uint96
+{
+	uint64 s0;
+	uint32 s1;
+} uint96;
+
+inline uint96 madd96(const uint96 z, const uint64 x, const uint32 y)
+{
+	uint96 r;
+#ifdef PTX_ASM
+	const uint32 xl = lo32(x), xh = hi32(x);
+	uint32 c0 = lo32(z.s0), c1 = hi32(z.s0), c2 = z.s1;
+	asm volatile ("mad.lo.cc.u32 %0, %1, %2, %3;" : "=r" (c0) : "r" (xl), "r" (y), "r" (c0));
+	asm volatile ("madc.hi.cc.u32 %0, %1, %2, %3;" : "=r" (c1) : "r" (xl), "r" (y), "r" (c1));
+	asm volatile ("addc.u32 %0, %1, 0;" : "=r" (c2) : "r" (c2));
+	asm volatile ("mad.lo.cc.u32 %0, %1, %2, %3;" : "=r" (c1) : "r" (xh), "r" (y), "r" (c1));
+	asm volatile ("madc.hi.u32 %0, %1, %2, %3;" : "=r" (c2) : "r" (xh), "r" (y), "r" (c2));
+	r.s0 = upsample(c1, c0); r.s1 = c2;
+#else
+	r.s0 = z.s0 + x * y; r.s1 = z.s1 + (uint32)(mul_hi(x, (uint64)(y))) + ((r.s0 < z.s0) ? 1 : 0);
+#endif
 	return r;
 }
 
 inline void mul80_wide(const uint80 x, const uint80 y, uint80 * const lo, uint80 * const hi)
 {
-	const uint32 a0 = (uint32)(x.s0), a1 = (uint32)(x.s0 >> 32); const uint16 a2 = x.s1;
-	const uint32 b0 = (uint32)(y.s0), b1 = (uint32)(y.s0 >> 32); const uint16 b2 = y.s1;
-
-	const uint64 a0b0 = mul32w(a0, b0), a0b1 = mul32w(a0, b1), a1b0 = mul32w(a1, b0), a1b1 = mul32w(a1, b1);	// 64 bits
-	const uint64 a0b2 = mul32w(a0, b2), a1b2 = mul32w(a1, b2), a2b0 = mul32w(a2, b0), a2b1 = mul32w(a2, b1);	// 48 bits
-	const uint32 a2b2 = mul16w(a2, b2);
-
-	const uint64 c12 = hi32x(a0b0) + lo32x(a0b1) + lo32x(a1b0);
-	const uint64 c23 = hi32x(a0b1) + hi32x(a1b0) + lo32x(a1b1) + a0b2 + a2b0 + hi32x(c12);
-	const uint64 c34 = hi32x(a1b1) + a1b2 + a2b1 + hi32x(c23);
-	const uint32 c0 = lo32(a0b0), c1 = lo32(c12), c2 = lo32(c23), c3 = lo32(c34), c4 = a2b2 + hi32(c34);
-
-	lo->s0 = upsample(c1, c0); lo->s1 = (uint16)(c2);
-	hi->s0 = upsample((c4 << 16) | (c3 >> 16), (c3 << 16) | (c2 >> 16)); hi->s1 = (uint16)(c4 >> 16);
+	lo->s0 = x.s0 * y.s0;
+	uint96 t; t.s0 = mul_hi(x.s0, y.s0); t.s1 = x.s1 * (uint32)(y.s1);
+	const uint96 r = madd96(madd96(t, x.s0, y.s1), y.s0, x.s1);
+	lo->s1 = (uint16)(r.s0); hi->s0 = (r.s0 >> 16) | ((uint64)(r.s1) << 48); hi->s1 = (uint16)(r.s1 >> 16);
 }
 
 inline void sqr80_wide(const uint80 x, uint80 * const lo, uint80 * const hi)
 {
-	const uint32 a0 = (uint32)(x.s0), a1 = (uint32)(x.s0 >> 32); const uint16 a2 = x.s1;
-
-	const uint64 b00 = mul32w(a0, a0), b01 = mul32w(a0, a1), b11 = mul32w(a1, a1);	// 64 bits
-	const uint64 b02 = mul32w(a0, a2), b12 = mul32w(a1, a2);	// 48 bits
-	const uint32 b22 = mul16w(a2, a2);
-
-	const uint64 c12 = hi32x(b00) + 2 * lo32x(b01);
-	const uint64 c23 = 2 * hi32x(b01) + lo32x(b11) + 2 * b02 + hi32x(c12);
-	const uint64 c34 = hi32x(b11) + 2 * b12 + hi32x(c23);
-	const uint32 c0 = lo32(b00), c1 = lo32(c12), c2 = lo32(c23), c3 = lo32(c34), c4 = b22 + hi32(c34);
-
-	lo->s0 = upsample(c1, c0); lo->s1 = (uint16)(c2);
-	hi->s0 = upsample((c4 << 16) | (c3 >> 16), (c3 << 16) | (c2 >> 16)); hi->s1 = (uint16)(c4 >> 16);
+	lo->s0 = x.s0 * x.s0;
+	uint96 t; t.s0 = mul_hi(x.s0, x.s0); t.s1 = x.s1 * (uint32)(x.s1);
+	const uint96 r = madd96(t, x.s0, (uint32)(x.s1) << 1);
+	lo->s1 = (uint16)(r.s0); hi->s0 = (r.s0 >> 16) | ((uint64)(r.s1) << 48); hi->s1 = (uint16)(r.s1 >> 16);
 }
 
 inline uint80 mul80(const uint80 x, const uint80 y)
 {
-	const uint32 a0 = (uint32)(x.s0), a1 = (uint32)(x.s0 >> 32); const uint16 a2 = x.s1;
-	const uint32 b0 = (uint32)(y.s0), b1 = (uint32)(y.s0 >> 32); const uint16 b2 = y.s1;
-
-	const uint64 a0b0 = mul32w(a0, b0), a0b1 = mul32w(a0, b1), a1b0 = mul32w(a1, b0);
-
-	const uint64 c12 = hi32x(a0b0) + a0b1 + a1b0;
-	const uint32 c0 = lo32(a0b0), c1 = lo32(c12);
-	const uint16 c2 = (uint16)(a1) * (uint16)(b1) + (uint16)(a0) * b2 + a2 * (uint16)(b0) + (uint16)(c12 >> 32);
-
-	uint80 r; r.s0 = upsample(c1, c0); r.s1 = c2;
+	const uint32 a0 = (uint32)(x.s0), a1 = (uint32)(x.s0 >> 32), a2 = x.s1;
+	const uint32 b0 = (uint32)(y.s0), b1 = (uint32)(y.s0 >> 32), b2 = y.s1;
+	uint32 c0 = a0 * b0, c1 = mul_hi(a0, b0), c2 = a1 * b1;
+#ifdef PTX_ASM
+	asm volatile ("mad.lo.u32 %0, %1, %2, %3;" : "=r" (c2) : "r" (a0), "r" (b2), "r" (c2));
+	asm volatile ("mad.lo.u32 %0, %1, %2, %3;" : "=r" (c2) : "r" (a2), "r" (b0), "r" (c2));
+	asm volatile ("mad.lo.cc.u32 %0, %1, %2, %3;" : "=r" (c1) : "r" (a0), "r" (b1), "r" (c1));
+	asm volatile ("madc.hi.u32 %0, %1, %2, %3;" : "=r" (c2) : "r" (a0), "r" (b1), "r" (c2));
+	asm volatile ("mad.lo.cc.u32 %0, %1, %2, %3;" : "=r" (c1) : "r" (a1), "r" (b0), "r" (c1));
+	asm volatile ("madc.hi.u32 %0, %1, %2, %3;" : "=r" (c2) : "r" (a1), "r" (b0), "r" (c2));
+#else
+	c2 += a0 * b2 + a2 * b0;
+	const uint64 c12 = upsample(c2, c1) + a0 * (uint64)(b1) + a1 * (uint64)(b0);
+	c1 = lo32(c12); c2 = hi32(c12);
+#endif
+	uint80 r; r.s0 = upsample(c1, c0); r.s1 = (uint16)(c2);
 	return r;
 }
 
 inline uint80 mul80_hi(const uint80 x, const uint80 y)
 {
-	const uint32 a0 = (uint32)(x.s0), a1 = (uint32)(x.s0 >> 32); const uint16 a2 = x.s1;
-	const uint32 b0 = (uint32)(y.s0), b1 = (uint32)(y.s0 >> 32); const uint16 b2 = y.s1;
-
-	const uint64 a0b1 = mul32w(a0, b1), a1b0 = mul32w(a1, b0), a1b1 = mul32w(a1, b1);	// 64 bits
-	const uint64 a0b2 = mul32w(a0, b2), a1b2 = mul32w(a1, b2), a2b0 = mul32w(a2, b0), a2b1 = mul32w(a2, b1);	// 48 bits
-	const uint32 a2b2 = mul16w(a2, b2);
-
-	const uint64 c12 = mul_hi(a0, b0) + lo32x(a0b1) + lo32x(a1b0);
-	const uint64 c23 = hi32x(a0b1) + hi32x(a1b0) + lo32x(a1b1) + a0b2 + a2b0 + hi32x(c12);
-	const uint64 c34 = hi32x(a1b1) + a1b2 + a2b1 + hi32x(c23);
-	const uint32 c2 = lo32(c23), c3 = lo32(c34), c4 = a2b2 + hi32(c34);
-
-	uint80 r; r.s0 = upsample((c4 << 16) | (c3 >> 16), (c3 << 16) | (c2 >> 16)); r.s1 = (uint16)(c4 >> 16);
+	uint96 t; t.s0 = mul_hi(x.s0, y.s0); t.s1 = x.s1 * (uint32)(y.s1);
+	const uint96 r96 = madd96(madd96(t, x.s0, y.s1), y.s0, x.s1);
+	uint80 r; r.s0 = (r96.s0 >> 16) | ((uint64)(r96.s1) << 48); r.s1 = (uint16)(r96.s1 >> 16);
 	return r;
 }
 
@@ -180,12 +203,19 @@ inline bool ge160(const uint160 x, const uint160 y)	// x is greater than or equa
 	return (x.s0 >= y.s0);
 }
 
-inline uint160 sub160(const uint160 a, const uint160 b)
+inline uint160 sub160(const uint160 x, const uint160 y)
 {
-	const uint32 c0 = (a.s0 < b.s0) ? 1 : 0, c1 = (a.s1 < b.s1) ? 1 : 0;
-	uint160 r; r.s0 = a.s0 - b.s0; r.s1 = a.s1 - b.s1; r.s2 = a.s2 - b.s2;
+	uint160 r;
+#ifdef PTX_ASM
+	asm volatile ("sub.cc.u64 %0, %1, %2;" : "=l" (r.s0) : "l" (x.s0), "l" (y.s0));
+	asm volatile ("subc.cc.u64 %0, %1, %2;" : "=l" (r.s1) : "l" (x.s1), "l" (y.s1));
+	asm volatile ("subc.u32 %0, %1, %2;" : "=r" (r.s2) : "r" (x.s2), "r" (y.s2));
+#else
+	const uint32 c0 = (x.s0 < y.s0) ? 1 : 0, c1 = (x.s1 < y.s1) ? 1 : 0;
+	r.s0 = x.s0 - y.s0; r.s1 = x.s1 - y.s1; r.s2 = x.s2 - y.s2;
 	const uint32 c2 = (r.s1 < c0) ? 1 : 0;
 	r.s1 -= c0; r.s2 -= c1 + c2;
+#endif
 	return r;
 }
 
@@ -193,14 +223,15 @@ inline uint160 sub160(const uint160 a, const uint160 b)
 inline uint160 shl160(const uint160 x, const int s)
 {
 	const uint32 rs2 = (s < 32) ? (x.s2 << s) : 0;
-	uint160 r; r.s2 = rs2 | (uint32)(x.s1 >> (64 - s)); r.s1 = (x.s1 << s) | (x.s0 >> (64 - s)); r.s0 = x.s0 << s;
+	uint160 r; r.s0 = x.s0 << s; r.s1 = (x.s1 << s) | (x.s0 >> (64 - s)); r.s2 = rs2 | (uint32)(x.s1 >> (64 - s));
 	return r;
 }
 
 // 0 < s < 64
 inline uint160 shr160(const uint160 x, const int s)
 {
-	uint160 r; r.s0 = (x.s0 >> s) | (x.s1 << (64 - s)); r.s1 = (x.s1 >> s) | ((uint64)(x.s2) << (64 - s)); r.s2 = (s < 32) ? (x.s2 >> s) : 0;
+	const uint32 rs2 = (s < 32) ? (x.s2 >> s) : 0;
+	uint160 r; r.s0 = (x.s0 >> s) | (x.s1 << (64 - s)); r.s1 = (x.s1 >> s) | ((uint64)(x.s2) << (64 - s)); r.s2 = rs2;
 	return r;
 }
 
@@ -296,9 +327,9 @@ inline uint80 mul_mod_vs(const uint80 a, const uint80 b, const uint80 bp, const 
 	return ge80(r, p) ? sub80(r, p) : r;
 }
 
-inline uint80 to_int(const uint80 r, const uint80 p, const uint80 q)
+inline uint80 to_int(const uint80 a, const uint80 p, const uint80 q)
 {
-	const uint80 mp = mul80_hi(mul80(r, q), p);
+	const uint80 mp = mul80_hi(mul80(a, q), p);
 	return !z80(mp) ? sub80(p, mp) : mp;
 }
 
@@ -338,71 +369,6 @@ inline bool prp(const uint80 p, const uint80 q, const uint80 one)
 	}
 	return (eq80(r, one) || eq80(r, sub80(p, one)));
 }
-
-/*
-
-inline uint64 add_mod(const uint64 a, const uint64 b, const uint64 p) { return a + b - ((a >= p - b) ? p : 0); }
-inline uint64 dup_mod(const uint64 a, const uint64 p) { return add_mod(a, a, p); }
-inline uint64 sub_mod(const uint64 a, const uint64 b, const uint64 p) { return a - b + ((a < b) ? p : 0); }
-
-// Montgomery modular multiplication
-inline uint64 mul_mod(const uint64 a, const uint64 b, const uint64 p, const uint64 q)
-{
-	const uint64 ab_l = a * b, ab_h = mul_hi(a, b);
-	return sub_mod(ab_h, mul_hi(ab_l * q, p), p);
-}
-
-inline uint64 sqr_mod(const uint64 a, const uint64 p, const uint64 q) { return mul_mod(a, a, p, q); }
-
-inline uint64 mul_mod_const(const uint64 a, const uint64 b, const uint64 p, const uint64 bq)
-{
-	const uint64 ab_h = mul_hi(a, b);
-	return sub_mod(ab_h, mul_hi(a * bq, p), p);
-}
-
-// Conversion out of Montgomery form
-inline uint64 Montgomery2int(const uint64 r, const uint64 p, const uint64 q)
-{
-	const uint64 mp = mul_hi(r * q, p);
-	return (mp != 0) ? p - mp : 0;
-}
-
-// p * p_inv = 1 (mod 2^64) (Newton's method)
-inline uint64 invert(const uint64 p)
-{
-	uint64 p_inv = 2 - p;
-	uint64 prev; do { prev = p_inv; p_inv *= 2 - p * p_inv; } while (p_inv != prev);
-	return p_inv;
-}
-
-// a^e mod p, left-to-right algorithm
-inline uint64 pow_mod(const uint64 a, const uint64 e, const uint64 p, const uint64 q)
-{
-	const uint64 aq = a * q;
-	uint64 r = a;
-	for (int b = ilog2(e) - 1; b >= 0; --b)
-	{
-		r = sqr_mod(r, p, q);
-		if (bittest(e, b)) r = mul_mod_const(r, a, p, aq);
-	}
-	return r;
-}
-
-// 2^{(p - 1)/2} ?= +/-1 mod p
-inline bool prp(const uint64 p, const uint64 q, const uint64 one)
-{
-	const uint64 e = (p - 1) / 2;
-	int b = ilog2(e) - 1;
-	uint64 r = dup_mod(one, p);	// 2 = 1 + 1
-	r = dup_mod(r, p);			// 2 * 2 = 2 + 2
-	if (bittest(e, b)) r = dup_mod(r, p);
-	for (--b; b >= 0; --b)
-	{
-		r = sqr_mod(r, p, q);
-		if (bittest(e, b)) r = dup_mod(r, p);
-	}
-	return ((r == one) || (r == p - one));
-}*/
 
 __kernel
 void generate_primes(__global sz_t * restrict const prime_count,
