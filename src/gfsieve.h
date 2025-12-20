@@ -47,9 +47,9 @@ protected:
 	volatile bool _quit = false;
 	bool _64bit = false;
 	bool _display = false;
-	size_t _max_factor_size = 0;
 	int _n = 0;
 	uint_8 _wheel[8];
+	static constexpr size_t _max_factor_size = size_t(1) << 25;	// 512MB
 	static constexpr size_t _factors_block = size_t(1) << 14u;
 	static constexpr int _log2_block_size = 22;	// => > 285000 primes
 	timer::time _start_time;
@@ -261,7 +261,6 @@ public:
 	{
 		_64bit = (p_max <= size_t(-1) / _unit);
 		_display = display;
-		_max_factor_size = (p_min >= 8) ? (size_t(1) << 24) : (size_t(1) << 26);		// 2^26: 512MB
 		_n = n;
 		std::stringstream ss; ss << n << "_" << p_min << "_" << p_max << ".txt";
 		_extension = ss.str();
@@ -308,7 +307,11 @@ public:
 
 		// std::cout << "For i = " << i_start << " to " << i_max - 1 << std::endl;
 		const double log_p_min = std::log(get_k(i_start)) + (n + 1) * std::log(2), log_p_max = std::log(get_k(i_max)) + (n + 1) * std::log(2);
-		std::cout << "Expected number of factors : " << (std::log(log_p_max) - std::log(log_p_min)) * 1e9 << std::endl;
+		const double count = (std::log(log_p_max) - std::log(log_p_min)) * 1e9;
+		std::cout << "Expected number of factors : ";
+		if (count >= 1000) std::cout << uint64(count); else std::cout << count;
+		std::cout << std::endl;
+		if (count > 0.9 * _max_factor_size) throw std::runtime_error("range is too large");
 
 		_start_time = timer::current_time();
 		timer::time display_time = _start_time, record_time = _start_time;
@@ -320,12 +323,12 @@ public:
 			if (_quit) break;
 
 			eng.generate_primes(block_size, i);
-			// const size_t primeCount = eng.read_prime_count();
-			// std::cout << i << ": " << primeCount << " primes" << std::endl;
+			// const size_t prime_count = eng.read_prime_count();
+			// std::cout << i << ": " << prime_count << " primes" << std::endl;
 			eng.init_factors(prime_size);
 			eng.check_factors(prime_size, N_2_factors_block);
-			// const size_t factorCount = eng.read_factor_count();
-			// std::cout << factorCount << " factor(s)" << std::endl;
+			// const size_t factor_count = eng.read_factor_count();
+			// std::cout << factor_count << " factor(s)" << std::endl;
 			eng.clear_prime_count();
 			++cnt;
 
