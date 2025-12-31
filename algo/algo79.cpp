@@ -388,6 +388,7 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 	uint80 * const q_vector = new uint80[block_size];
 	uint80 * const ext_vector = new uint80[block_size];
 	uint80 * const c_vector = new uint80[block_size];
+	uint80 * const cn_vector = new uint80[block_size];
 #ifdef CHECK
 	uint80 * const c0sqm_vector = new uint80[block_size];
 	uint80 * const qs_vector = new uint80[block_size];
@@ -427,8 +428,8 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 
 		// p = 18446P: expected = 15/8 * 2 / log(18446e15) * block_size = 0.0845 * block_size
 		// p = 600e6P: expected = 15/8 * 2 / log(600e21) * block_size = 0.0685 * block_size
-		const double p = 15 / 8.0 * i * std::pow(2.0, double(log2_block_size + n + 1));
-		const double expected = 15 / 8.0 * std::pow(2.0, log2_block_size + 1) / log(p);
+		const double pf = 15 / 8.0 * i * std::pow(2.0, double(log2_block_size + n + 1));
+		const double expected = 15 / 8.0 * std::pow(2.0, log2_block_size + 1) / log(pf);
 		std::cout << i << ": " << prime_count << " primes (" << expected << ")" << std::endl;
 
 		// init_factors
@@ -479,6 +480,7 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 			c_vector[id] = c;
 			ext_vector[id] = c2;
 			q_vector[id] = div80(c2, p);
+			cn_vector[id] = sub80(p, c);
 #ifdef CHECK
 			const uint80 cm2 = sqr_mod(cm, p, q);
 			c0sqm_vector[id] = cm2;
@@ -520,7 +522,8 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 #endif
 				}
 
-				c_vector[id] = c;
+				if (j != N_2_factors_block - 1) c_vector[id] = c;
+				else if (!eq80(c, cn_vector[id])) throw std::runtime_error("Error: check failed.");
 			}
 		}
 
@@ -531,6 +534,7 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 	delete[] q_vector;
 	delete[] ext_vector;
 	delete[] c_vector;
+	delete[] cn_vector;
 #ifdef CHECK
 	delete[] c0sqm_vector;
 	delete[] qs_vector;

@@ -163,6 +163,7 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 	uint64 * const q_vector = new uint64[block_size];
 	uint64 * const ext_vector = new uint64[block_size];
 	uint64 * const c_vector = new uint64[block_size];
+	uint64 * const cn_vector = new uint64[block_size];
 
 	uint32 prime_count = 0;
 
@@ -194,8 +195,8 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 
 		// p = 1P: expected = 15/8 * 2 / log(1e15) * block_size = 0.1086 * block_size
 		// p = 18446P: expected = 15/8 * 2 / log(18446e15) * block_size = 0.0845 * block_size
-		const double p = 15 / 8.0 * i * std::pow(2.0, double(log2_block_size + n + 1));
-		const double expected = 15 / 8.0 * std::pow(2.0, log2_block_size + 1) / log(p);
+		const double pf = 15 / 8.0 * i * std::pow(2.0, double(log2_block_size + n + 1));
+		const double expected = 15 / 8.0 * std::pow(2.0, log2_block_size + 1) / log(pf);
 		std::cout << i << ": " << prime_count << " primes (" << expected << ")" << std::endl;
 
 		// init_factors
@@ -234,8 +235,10 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 #endif
 			// a^{(p - 1)/2} = -1 <=> a^{k*2^n} = -1. (a^k)^{2*i + 1} are the roots of b^{2^n} + 1 = 0 (mod p)
 			const uint64 cm = pow_mod(am, k, p, q);
-			c_vector[id] = Montgomery2int(cm, p, q);
+			const uint64 c = Montgomery2int(cm, p, q);
+			c_vector[id] = c;
 			ext_vector[id] = sqr_mod(cm, p, q);
+			cn_vector[id] = p - c;
 		}
 
 		// check_factors
@@ -271,7 +274,8 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 #endif
 				}
 
-				c_vector[id] = c;
+				if (j != N_2_factors_block - 1) c_vector[id] = c;
+				else if (c != cn_vector[id]) throw std::runtime_error("Error: check failed.");
 			}
 		}
 
@@ -282,6 +286,7 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 	delete[] q_vector;
 	delete[] ext_vector;
 	delete[] c_vector;
+	delete[] cn_vector;
 }
 
 int main()
