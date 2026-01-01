@@ -41,131 +41,131 @@ inline bool prp_slow(const __uint128_t p)
 
 typedef uint8_t		uint_8;
 typedef int8_t		int_8;
-typedef uint16_t	uint16;
-typedef uint32_t	uint32;
-typedef uint64_t	uint64;
+typedef uint16_t	uint_16;
+typedef uint32_t	uint_32;
+typedef uint64_t	uint_64;
 
-typedef struct _uint80
+typedef struct _uint_80
 {
-	uint64 s0;
-	uint16 s1;
-} uint80;
+	uint_64 s0;
+	uint_16 s1;
+} uint_80;
 
 // OpenCL functions
-inline uint32 atomic_inc(uint32 * const p) { const uint32 t = *p; (*p)++; return t; }
-inline uint32 mul_hi(const uint32 x, const uint32 y) { return uint32((x * uint64(y)) >> 32); }
-inline uint64 mul_hi(const uint64 x, const uint64 y) { return uint64((x * __uint128_t(y)) >> 64); }
-inline uint64 upsample(const uint32 hi, const uint32 lo) { return ((uint64)(hi) << 32) | lo; }
+inline uint_32 atomic_inc(uint_32 * const p) { const uint_32 t = *p; (*p)++; return t; }
+inline uint_32 mul_hi(const uint_32 x, const uint_32 y) { return uint_32((x * uint_64(y)) >> 32); }
+inline uint_64 mul_hi(const uint_64 x, const uint_64 y) { return uint_64((x * __uint128_t(y)) >> 64); }
+inline uint_64 upsample(const uint_32 hi, const uint_32 lo) { return ((uint_64)(hi) << 32) | lo; }
 
-inline int ilog2_64(const uint64 x) { return 63 - __builtin_clzll((unsigned long long)(x)); }
-inline int ilog2_80(const uint80 x) { return (x.s1 != 0) ? (64 + 31 - __builtin_clz((unsigned int)(x.s1))) : ilog2_64(x.s0); }
-inline bool bittest_64(const uint64 x, const int b) { return ((x & ((uint64)(1) << b)) != 0); }
-inline bool bittest_80(const uint80 x, const int b) { return (b >= 64) ? ((x.s1 & ((uint16)(1) << (b - 64))) != 0) : bittest_64(x.s0, b); }
+inline int ilog2_64(const uint_64 x) { return 63 - __builtin_clzll((unsigned long long)(x)); }
+inline int ilog2_80(const uint_80 x) { return (x.s1 != 0) ? (64 + 31 - __builtin_clz((unsigned int)(x.s1))) : ilog2_64(x.s0); }
+inline bool bittest_64(const uint_64 x, const int b) { return ((x & ((uint_64)(1) << b)) != 0); }
+inline bool bittest_80(const uint_80 x, const int b) { return (b >= 64) ? ((x.s1 & ((uint_16)(1) << (b - 64))) != 0) : bittest_64(x.s0, b); }
 
-inline uint32 lo32(const uint64 x) { return (uint32)(x); }
-inline uint32 hi32(const uint64 x) { return (uint32)(x >> 32); }
+inline uint_32 lo32(const uint_64 x) { return (uint_32)(x); }
+inline uint_32 hi32(const uint_64 x) { return (uint_32)(x >> 32); }
 
-inline bool eq80(const uint80 x, const uint80 y)	// x is equal to y
+inline bool eq80(const uint_80 x, const uint_80 y)	// x is equal to y
 {
 	return ((x.s1 == y.s1) && (x.s0 == y.s0));
 }
 
-inline bool ge80(const uint80 x, const uint80 y)	// x is greater than or equal to y
+inline bool ge80(const uint_80 x, const uint_80 y)	// x is greater than or equal to y
 {
 	if (x.s1 > y.s1) return true;
 	if (x.s1 < y.s1) return false;
 	return (x.s0 >= y.s0);
 }
 
-inline bool z80(const uint80 x)	// x is equal to 0
+inline bool z80(const uint_80 x)	// x is equal to 0
 {
 	return ((x.s1 == 0) && (x.s0 == 0));
 }
 
-inline uint80 add80(const uint80 x, const uint80 y)
+inline uint_80 add80(const uint_80 x, const uint_80 y)
 {
-	uint80 r; r.s0 = x.s0 + y.s0; r.s1 = x.s1 + y.s1 + ((r.s0 < x.s0) ? 1 : 0);
+	uint_80 r; r.s0 = x.s0 + y.s0; r.s1 = x.s1 + y.s1 + ((r.s0 < x.s0) ? 1 : 0);
 	return r;
 }
 
-inline uint80 sub80(const uint80 x, const uint80 y)
+inline uint_80 sub80(const uint_80 x, const uint_80 y)
 {
-	uint80 r; r.s0 = x.s0 - y.s0; r.s1 = x.s1 - y.s1 - ((x.s0 < y.s0) ? 1 : 0);
+	uint_80 r; r.s0 = x.s0 - y.s0; r.s1 = x.s1 - y.s1 - ((x.s0 < y.s0) ? 1 : 0);
 	return r;
 }
 
-inline uint80 neg80(const uint80 x)
+inline uint_80 neg80(const uint_80 x)
 {
-	uint80 r; r.s0 = -x.s0; r.s1 = -x.s1 - ((x.s0 != 0) ? 1 : 0);
-	return r;
-}
-
-// 0 < s < 64
-inline uint80 shl80(const uint80 x, const int s)
-{
-	const uint16 rs1 = (s < 16) ? (x.s1 << s) : 0;
-	uint80 r; r.s0 = x.s0 << s; r.s1 = rs1 | (uint16)(x.s0 >> (64 - s));
+	uint_80 r; r.s0 = -x.s0; r.s1 = -x.s1 - ((x.s0 != 0) ? 1 : 0);
 	return r;
 }
 
 // 0 < s < 64
-inline uint80 shr80(const uint80 x, const int s)
+inline uint_80 shl80(const uint_80 x, const int s)
 {
-	const uint16 rs1 = (s < 16) ? (x.s1 >> s) : 0;
-	uint80 r; r.s0 = (x.s0 >> s) | ((uint64)(x.s1) << (64 - s)); r.s1 = rs1;
+	const uint_16 rs1 = (s < 16) ? (x.s1 << s) : 0;
+	uint_80 r; r.s0 = x.s0 << s; r.s1 = rs1 | (uint_16)(x.s0 >> (64 - s));
 	return r;
 }
 
-typedef struct _uint96
+// 0 < s < 64
+inline uint_80 shr80(const uint_80 x, const int s)
 {
-	uint64 s0;
-	uint32 s1;
-} uint96;
-
-inline uint96 madd96(const uint96 z, const uint64 x, const uint32 y)
-{
-	uint96 r; r.s0 = z.s0 + x * y; r.s1 = z.s1 + (uint32)(mul_hi(x, (uint64)(y))) + ((r.s0 < z.s0) ? 1 : 0);
+	const uint_16 rs1 = (s < 16) ? (x.s1 >> s) : 0;
+	uint_80 r; r.s0 = (x.s0 >> s) | ((uint_64)(x.s1) << (64 - s)); r.s1 = rs1;
 	return r;
 }
 
-inline void mul80_wide(const uint80 x, const uint80 y, uint80 * const lo, uint80 * const hi)
+typedef struct _uint_96
+{
+	uint_64 s0;
+	uint_32 s1;
+} uint_96;
+
+inline uint_96 madd96(const uint_96 z, const uint_64 x, const uint_32 y)
+{
+	uint_96 r; r.s0 = z.s0 + x * y; r.s1 = z.s1 + (uint_32)(mul_hi(x, (uint_64)(y))) + ((r.s0 < z.s0) ? 1 : 0);
+	return r;
+}
+
+inline void mul80_wide(const uint_80 x, const uint_80 y, uint_80 * const lo, uint_80 * const hi)
 {
 	lo->s0 = x.s0 * y.s0;
-	uint96 t; t.s0 = mul_hi(x.s0, y.s0); t.s1 = x.s1 * (uint32)(y.s1);
-	const uint96 r = madd96(madd96(t, x.s0, y.s1), y.s0, x.s1);
-	lo->s1 = (uint16)(r.s0); hi->s0 = (r.s0 >> 16) | ((uint64)(r.s1) << 48); hi->s1 = (uint16)(r.s1 >> 16);
+	uint_96 t; t.s0 = mul_hi(x.s0, y.s0); t.s1 = x.s1 * (uint_32)(y.s1);
+	const uint_96 r = madd96(madd96(t, x.s0, y.s1), y.s0, x.s1);
+	lo->s1 = (uint_16)(r.s0); hi->s0 = (r.s0 >> 16) | ((uint_64)(r.s1) << 48); hi->s1 = (uint_16)(r.s1 >> 16);
 }
 
-inline void sqr80_wide(const uint80 x, uint80 * const lo, uint80 * const hi)
+inline void sqr80_wide(const uint_80 x, uint_80 * const lo, uint_80 * const hi)
 {
 	lo->s0 = x.s0 * x.s0;
-	uint96 t; t.s0 = mul_hi(x.s0, x.s0); t.s1 = x.s1 * (uint32)(x.s1);
-	const uint96 r = madd96(t, x.s0, (uint32)(x.s1) << 1);
-	lo->s1 = (uint16)(r.s0); hi->s0 = (r.s0 >> 16) | ((uint64)(r.s1) << 48); hi->s1 = (uint16)(r.s1 >> 16);
+	uint_96 t; t.s0 = mul_hi(x.s0, x.s0); t.s1 = x.s1 * (uint_32)(x.s1);
+	const uint_96 r = madd96(t, x.s0, (uint_32)(x.s1) << 1);
+	lo->s1 = (uint_16)(r.s0); hi->s0 = (r.s0 >> 16) | ((uint_64)(r.s1) << 48); hi->s1 = (uint_16)(r.s1 >> 16);
 }
 
-inline uint80 mul80(const uint80 x, const uint80 y)
+inline uint_80 mul80(const uint_80 x, const uint_80 y)
 {
-	const uint32 a0 = (uint32)(x.s0), a1 = (uint32)(x.s0 >> 32), a2 = x.s1;
-	const uint32 b0 = (uint32)(y.s0), b1 = (uint32)(y.s0 >> 32), b2 = y.s1;
-	const uint32 c0 = a0 * b0, c1 = mul_hi(a0, b0), c2 = a1 * b1 + a0 * b2 + a2 * b0;
-	const uint64 c12 = upsample(c2, c1) + a0 * (uint64)(b1) + a1 * (uint64)(b0);
-	uint80 r; r.s0 = upsample(lo32(c12), c0); r.s1 = (uint16)(hi32(c12));
+	const uint_32 a0 = (uint_32)(x.s0), a1 = (uint_32)(x.s0 >> 32), a2 = x.s1;
+	const uint_32 b0 = (uint_32)(y.s0), b1 = (uint_32)(y.s0 >> 32), b2 = y.s1;
+	const uint_32 c0 = a0 * b0, c1 = mul_hi(a0, b0), c2 = a1 * b1 + a0 * b2 + a2 * b0;
+	const uint_64 c12 = upsample(c2, c1) + a0 * (uint_64)(b1) + a1 * (uint_64)(b0);
+	uint_80 r; r.s0 = upsample(lo32(c12), c0); r.s1 = (uint_16)(hi32(c12));
 	return r;
 }
 
-inline uint80 mul80_hi(const uint80 x, const uint80 y)
+inline uint_80 mul80_hi(const uint_80 x, const uint_80 y)
 {
-	uint96 t; t.s0 = mul_hi(x.s0, y.s0); t.s1 = x.s1 * (uint32)(y.s1);
-	const uint96 r96 = madd96(madd96(t, x.s0, y.s1), y.s0, x.s1);
-	uint80 r; r.s0 = (r96.s0 >> 16) | ((uint64)(r96.s1) << 48); r.s1 = (uint16)(r96.s1 >> 16);
+	uint_96 t; t.s0 = mul_hi(x.s0, y.s0); t.s1 = x.s1 * (uint_32)(y.s1);
+	const uint_96 r96 = madd96(madd96(t, x.s0, y.s1), y.s0, x.s1);
+	uint_80 r; r.s0 = (r96.s0 >> 16) | ((uint_64)(r96.s1) << 48); r.s1 = (uint_16)(r96.s1 >> 16);
 	return r;
 }
 
 typedef struct _uint160
 {
-	uint64 s0, s1;
-	uint32 s2;
+	uint_64 s0, s1;
+	uint_32 s2;
 } uint160;
 
 inline bool ge160(const uint160 x, const uint160 y)	// x is greater than or equal to y
@@ -179,9 +179,9 @@ inline bool ge160(const uint160 x, const uint160 y)	// x is greater than or equa
 
 inline uint160 sub160(const uint160 x, const uint160 y)
 {
-	const uint32 c0 = (x.s0 < y.s0) ? 1 : 0, c1 = (x.s1 < y.s1) ? 1 : 0;
+	const uint_32 c0 = (x.s0 < y.s0) ? 1 : 0, c1 = (x.s1 < y.s1) ? 1 : 0;
 	uint160 r; r.s0 = x.s0 - y.s0; r.s1 = x.s1 - y.s1; r.s2 = x.s2 - y.s2;
-	const uint32 c2 = (r.s1 < c0) ? 1 : 0;
+	const uint_32 c2 = (r.s1 < c0) ? 1 : 0;
 	r.s1 -= c0; r.s2 -= c1 + c2;
 	return r;
 }
@@ -189,21 +189,21 @@ inline uint160 sub160(const uint160 x, const uint160 y)
 // 0 < s < 64
 inline uint160 shl160(const uint160 x, const int s)
 {
-	const uint32 rs2 = (s < 32) ? (x.s2 << s) : 0;
-	uint160 r; r.s0 = x.s0 << s; r.s1 = (x.s1 << s) | (x.s0 >> (64 - s)); r.s2 = rs2 | (uint32)(x.s1 >> (64 - s));
+	const uint_32 rs2 = (s < 32) ? (x.s2 << s) : 0;
+	uint160 r; r.s0 = x.s0 << s; r.s1 = (x.s1 << s) | (x.s0 >> (64 - s)); r.s2 = rs2 | (uint_32)(x.s1 >> (64 - s));
 	return r;
 }
 
 // 0 < s < 64
 inline uint160 shr160(const uint160 x, const int s)
 {
-	const uint32 rs2 = (s < 32) ? (x.s2 >> s) : 0;
-	uint160 r; r.s0 = (x.s0 >> s) | (x.s1 << (64 - s)); r.s1 = (x.s1 >> s) | ((uint64)(x.s2) << (64 - s)); r.s2 = rs2;
+	const uint_32 rs2 = (s < 32) ? (x.s2 >> s) : 0;
+	uint160 r; r.s0 = (x.s0 >> s) | (x.s1 << (64 - s)); r.s1 = (x.s1 >> s) | ((uint_64)(x.s2) << (64 - s)); r.s2 = rs2;
 	return r;
 }
 
 // 2^80 * x / y, x < y, y is not a power of 2
-inline uint80 div80(const uint80 x, const uint80 y)
+inline uint_80 div80(const uint_80 x, const uint_80 y)
 {
 	if (z80(x)) return x;
 
@@ -212,16 +212,16 @@ inline uint80 div80(const uint80 x, const uint80 y)
 
 	// m = 2^b * y
 	const int b_64 = (b < 64) ? 0 : 1, b64 = b % 64;
-	uint160 m; m.s0 = (b_64 == 0) ? y.s0 : 0; m.s1 = (b_64 == 0) ? (uint64)(y.s1) : y.s0; m.s2 = (b_64 == 0) ? 0 : (uint32)(y.s1);
+	uint160 m; m.s0 = (b_64 == 0) ? y.s0 : 0; m.s1 = (b_64 == 0) ? (uint_64)(y.s1) : y.s0; m.s2 = (b_64 == 0) ? 0 : (uint_32)(y.s1);
 	if (b64 > 0) m = shl160(m, b64);
 
 	// z = 2^80 * x
-	uint160 z; z.s0 = 0; z.s1 = x.s0 << 16; z.s2 = ((uint32)(x.s1) << 16) | (uint32)(x.s0 >> 48);
+	uint160 z; z.s0 = 0; z.s1 = x.s0 << 16; z.s2 = ((uint_32)(x.s1) << 16) | (uint_32)(x.s0 >> 48);
 	// z < 2*m ?
 	uint160 t = shl160(m, 1);
 	if (ge160(z, t)) { ++b; m = t; }
 
-	uint80 r; r.s0 = 0; r.s1 = 0;
+	uint_80 r; r.s0 = 0; r.s1 = 0;
 	for (int j = 0; j <= b; ++j)
 	{
 		r = shl80(r, 1);
@@ -233,15 +233,15 @@ inline uint80 div80(const uint80 x, const uint80 y)
 }
 
 // 2^80 mod x, x is not a power of 2, 2^63 < x < 2^79
-inline uint80 modinv80(const uint80 x)
+inline uint_80 modinv80(const uint_80 x)
 {
 	// 2^b * x < 2^80 < 2^{b+1} * x, 1 <= b <= 16
 	const int b = 80 - ilog2_80(x) - 1;
 
 	// m = 2^b * x
-	uint80 m = shl80(x, b);
+	uint_80 m = shl80(x, b);
 	// r = 2^80 - m
-	uint80 r = neg80(m);
+	uint_80 r = neg80(m);
 
 	for (int j = 1; j <= b; ++j)
 	{
@@ -252,67 +252,67 @@ inline uint80 modinv80(const uint80 x)
 	return r;
 }
 
-inline uint80 add_mod(const uint80 a, const uint80 b, const uint80 p)
+inline uint_80 add_mod(const uint_80 a, const uint_80 b, const uint_80 p)
 {
-	uint80 r = add80(a, b);
+	uint_80 r = add80(a, b);
 	if (ge80(r, p)) r = sub80(r, p);
 	return r;
 }
 
-inline uint80 dup_mod(const uint80 a, const uint80 p)
+inline uint_80 dup_mod(const uint_80 a, const uint_80 p)
 {
-	uint80 r = shl80(a, 1);
+	uint_80 r = shl80(a, 1);
 	if (ge80(r, p)) r = sub80(r, p);
 	return r;
 }
 
-inline uint80 sub_mod(const uint80 a, const uint80 b, const uint80 p)
+inline uint_80 sub_mod(const uint_80 a, const uint_80 b, const uint_80 p)
 {
-	uint80 r = sub80(a, b);
+	uint_80 r = sub80(a, b);
 	if (!ge80(a, b)) r = add80(r, p);
 	return r;
 }
 
 // Montgomery modular multiplication
-inline uint80 mul_mod(const uint80 a, const uint80 b, const uint80 p, const uint80 q)
+inline uint_80 mul_mod(const uint_80 a, const uint_80 b, const uint_80 p, const uint_80 q)
 {
-	uint80 ab_l, ab_h; mul80_wide(a, b, &ab_l, &ab_h);
+	uint_80 ab_l, ab_h; mul80_wide(a, b, &ab_l, &ab_h);
 	return sub_mod(ab_h, mul80_hi(mul80(ab_l, q), p), p);
 }
 
-inline uint80 sqr_mod(const uint80 a, const uint80 p, const uint80 q)
+inline uint_80 sqr_mod(const uint_80 a, const uint_80 p, const uint_80 q)
 {
-	uint80 a2_l, a2_h; sqr80_wide(a, &a2_l, &a2_h);
+	uint_80 a2_l, a2_h; sqr80_wide(a, &a2_l, &a2_h);
 	return sub_mod(a2_h, mul80_hi(mul80(a2_l, q), p), p);
 }
 
 // Victor Shoup’s modular multiplication
-inline uint80 mul_mod_vs(const uint80 a, const uint80 b, const uint80 bp, const uint80 p)
+inline uint_80 mul_mod_vs(const uint_80 a, const uint_80 b, const uint_80 bp, const uint_80 p)
 {
-	const uint80 abp_h = mul80_hi(a, bp);
-	const uint80 r = sub80(mul80(a, b), mul80(abp_h, p));
+	const uint_80 abp_h = mul80_hi(a, bp);
+	const uint_80 r = sub80(mul80(a, b), mul80(abp_h, p));
 	return ge80(r, p) ? sub80(r, p) : r;
 }
 
-inline uint80 to_int(const uint80 a, const uint80 p, const uint80 q)
+inline uint_80 to_int(const uint_80 a, const uint_80 p, const uint_80 q)
 {
-	const uint80 mp = mul80_hi(mul80(a, q), p);
+	const uint_80 mp = mul80_hi(mul80(a, q), p);
 	return !z80(mp) ? sub80(p, mp) : mp;
 }
 
 // p * p_inv = 1 (mod 2^80) (Newton's method)
-inline uint80 invert(const uint80 p)
+inline uint_80 invert(const uint_80 p)
 {
-	uint80 two; two.s0 = 2; two.s1 = 0;
-	uint80 p_inv = sub80(two, p);
-	uint80 prev; do { prev = p_inv; p_inv = mul80(p_inv, sub80(two, mul80(p, p_inv))); } while (!eq80(p_inv, prev));
+	uint_80 two; two.s0 = 2; two.s1 = 0;
+	uint_80 p_inv = sub80(two, p);
+	uint_80 prev; do { prev = p_inv; p_inv = mul80(p_inv, sub80(two, mul80(p, p_inv))); } while (!eq80(p_inv, prev));
 	return p_inv;
 }
 
 // a^e mod p, left-to-right algorithm
-inline uint80 pow_mod(const uint80 a, const uint64 e, const uint80 p, const uint80 q)
+inline uint_80 pow_mod(const uint_80 a, const uint_64 e, const uint_80 p, const uint_80 q)
 {
-	uint80 r = a;
+	uint_80 r = a;
 	for (int b = ilog2_64(e) - 1; b >= 0; --b)
 	{
 		r = sqr_mod(r, p, q);
@@ -322,11 +322,11 @@ inline uint80 pow_mod(const uint80 a, const uint64 e, const uint80 p, const uint
 }
 
 // 2^{(p - 1)/2} ?= +/-1 mod p
-inline bool prp(const uint80 p, const uint80 q, const uint80 one)
+inline bool prp(const uint_80 p, const uint_80 q, const uint_80 one)
 {
-	uint80 e; e.s0 = (p.s0 >> 1) | ((uint64)(p.s1) << 63); e.s1 = p.s1 >> 1;
+	uint_80 e; e.s0 = (p.s0 >> 1) | ((uint_64)(p.s1) << 63); e.s1 = p.s1 >> 1;
 	int b = ilog2_80(e) - 1;
-	uint80 r = dup_mod(one, p);	// 2 = 1 + 1
+	uint_80 r = dup_mod(one, p);	// 2 = 1 + 1
 	r = dup_mod(r, p);			// 2 * 2 = 2 + 2
 	if (bittest_80(e, b)) r = dup_mod(r, p);
 	for (--b; b >= 0; --b)
@@ -337,7 +337,7 @@ inline bool prp(const uint80 p, const uint80 q, const uint80 one)
 	return (eq80(r, one) || eq80(r, sub80(p, one)));
 }
 
-static void check(const uint64 k , const uint32 b, const int n)
+static void check(const uint_64 k , const uint_32 b, const int n)
 {
 	mpz_t zp, zr, zt; mpz_inits(zp, zr, zt, nullptr);
 
@@ -377,37 +377,37 @@ static void check(const uint64 k , const uint32 b, const int n)
 	mpz_clears(zp, zr, zt, nullptr);
 }
 
-static void test(const uint64 i_min, const uint64 i_max, const int n, const int log2_block_size, const uint_8 * const wheel, const int_8 * const kro_vector)
+static void test(const uint_64 i_min, const uint_64 i_max, const int n, const int log2_block_size, const uint_8 * const wheel, const int_8 * const kro_vector)
 {
 	const size_t block_size = size_t(1) << log2_block_size;
 	const size_t factors_block = size_t(1) << 10;
 	const size_t N_2_factors_block = (size_t(1) << (n - 1)) / factors_block;
 	const int g_n = n + 1;
 
-	uint64 * const k_vector = new uint64[block_size];
-	uint80 * const q_vector = new uint80[block_size];
-	uint80 * const ext_vector = new uint80[block_size];
-	uint80 * const c_vector = new uint80[block_size];
-	uint80 * const cn_vector = new uint80[block_size];
+	uint_64 * const k_vector = new uint_64[block_size];
+	uint_80 * const q_vector = new uint_80[block_size];
+	uint_80 * const ext_vector = new uint_80[block_size];
+	uint_80 * const c_vector = new uint_80[block_size];
+	uint_80 * const cn_vector = new uint_80[block_size];
 #ifdef CHECK
-	uint80 * const c0sqm_vector = new uint80[block_size];
-	uint80 * const qs_vector = new uint80[block_size];
+	uint_80 * const c0sqm_vector = new uint_80[block_size];
+	uint_80 * const qs_vector = new uint_80[block_size];
 #endif
 
-	uint32 prime_count = 0;
+	uint_32 prime_count = 0;
 
-	for (uint64 i = i_min; i < i_max; ++i)
+	for (uint_64 i = i_min; i < i_max; ++i)
 	{
 		// generate_primes
-		for (uint64 id = 0; id < block_size; ++id)
+		for (uint_64 id = 0; id < block_size; ++id)
 		{
-			const uint64 j = (i << log2_block_size) | id;
-			const uint64 k = 15 * (j / 8) + wheel[j % 8];
+			const uint_64 j = (i << log2_block_size) | id;
+			const uint_64 k = 15 * (j / 8) + wheel[j % 8];
 
-			uint80 p; p.s0 = (k << g_n) | 1; p.s1 = (uint16)(k >> (64 - g_n));
-			const uint80 q = invert(p);
+			uint_80 p; p.s0 = (k << g_n) | 1; p.s1 = (uint_16)(k >> (64 - g_n));
+			const uint_80 q = invert(p);
 			// one is the Montgomery form of 1: 2^80 mod p
-			const uint80 one = modinv80(p);
+			const uint_80 one = modinv80(p);
 
 			const bool isprp = prp(p, q, one);
 #ifdef CHECK
@@ -419,7 +419,7 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 #endif
 			if (isprp)
 			{
-				const uint32 prime_index = atomic_inc(&prime_count);
+				const uint_32 prime_index = atomic_inc(&prime_count);
 				k_vector[prime_index] = k;
 				q_vector[prime_index] = q;
 				ext_vector[prime_index] = one;
@@ -433,34 +433,34 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 		std::cout << i << ": " << prime_count << " primes (" << expected << ")" << std::endl;
 
 		// init_factors
-		for (uint64 id = 0; id < block_size; ++id)
+		for (uint_64 id = 0; id < block_size; ++id)
 		{
 			if (id >= prime_count) break;
 
-			const uint64 k = k_vector[id];
-			const uint80 q = q_vector[id], one = ext_vector[id];
+			const uint_64 k = k_vector[id];
+			const uint_80 q = q_vector[id], one = ext_vector[id];
 
-			uint80 p; p.s0 = (k << g_n) | 1; p.s1 = (uint16)(k >> (64 - g_n));
-			const uint80 two = dup_mod(one, p);
+			uint_80 p; p.s0 = (k << g_n) | 1; p.s1 = (uint_16)(k >> (64 - g_n));
+			const uint_80 two = dup_mod(one, p);
 
 			// p = 1 (mod 4). If a is odd then (a/p) = (p/a) = ({p mod a}/a)
 
-			uint32 a = 3; uint80 am = add_mod(two, one, p);
-			const uint32 pmod3 = (((uint32)(k % 3) << g_n) | 1) % 3;
+			uint_32 a = 3; uint_80 am = add_mod(two, one, p);
+			const uint_32 pmod3 = (((uint_32)(k % 3) << g_n) | 1) % 3;
 			if (pmod3 != 2)
 			{
 				a += 2; am = add_mod(am, two, p);
-				const uint32 pmod5 = (((uint32)(k % 5) << g_n) | 1) % 5;
+				const uint_32 pmod5 = (((uint_32)(k % 5) << g_n) | 1) % 5;
 				if (kro_vector[256 * ((5 - 3) / 2) + pmod5] >= 0)
 				{
 					a += 2; am = add_mod(am, two, p);
-					const uint32 pmod7 = (((uint32)(k % 7) << g_n) | 1) % 7;
+					const uint_32 pmod7 = (((uint_32)(k % 7) << g_n) | 1) % 7;
 					if (kro_vector[256 * ((7 - 3) / 2) + pmod7] >= 0)
 					{
 						a += 4; am = add_mod(am, dup_mod(two, p), p);
 						while (a < 256)
 						{
-							const uint32 pmoda = (uint32)((((k % a) << g_n) | 1) % a);
+							const uint_32 pmoda = (uint_32)((((k % a) << g_n) | 1) % a);
 							if (kro_vector[256 * ((a - 3) / 2) + pmoda] < 0) break;
 							a += 2; am = add_mod(am, two, p);
 						}
@@ -470,19 +470,19 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 			}
 
 			// a^{(p - 1)/2} = -1 <=> a^{k*2^n} = -1. (a^k)^{2*i + 1} are the roots of b^{2^n} + 1 = 0 (mod p)
-			const uint80 cm = pow_mod(am, k, p, q);
+			const uint_80 cm = pow_mod(am, k, p, q);
 #ifdef CHECK
 			// p - 1 = k * 2^n
-			uint80 t = cm; for (int i = 0; i < n; ++i) t = sqr_mod(t, p, q);
+			uint_80 t = cm; for (int i = 0; i < n; ++i) t = sqr_mod(t, p, q);
 			if (!eq80(t, sub80(p, one))) throw std::runtime_error("Error: a.");
 #endif
-			const uint80 c = to_int(cm, p, q), c2 = mul_mod(c, cm, p, q);
+			const uint_80 c = to_int(cm, p, q), c2 = mul_mod(c, cm, p, q);
 			c_vector[id] = c;
 			ext_vector[id] = c2;
 			q_vector[id] = div80(c2, p);
 			cn_vector[id] = sub80(p, c);
 #ifdef CHECK
-			const uint80 cm2 = sqr_mod(cm, p, q);
+			const uint_80 cm2 = sqr_mod(cm, p, q);
 			c0sqm_vector[id] = cm2;
 			qs_vector[id] = q;
 #endif
@@ -493,28 +493,28 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 		{
 			// std::cout << j << " / " << N_2_factors_block << std::endl;
 
-			for (uint64 id = 0; id < block_size; ++id)
+			for (uint_64 id = 0; id < block_size; ++id)
 			{
 				if (id >= prime_count) break;
 
-				uint80 c = c_vector[id];
+				uint_80 c = c_vector[id];
 				if (z80(c)) continue;
 
-				const uint64 k = k_vector[id];
-				uint80 p; p.s0 = (k << g_n) | 1; p.s1 = (uint16)(k >> (64 - g_n));
+				const uint_64 k = k_vector[id];
+				uint_80 p; p.s0 = (k << g_n) | 1; p.s1 = (uint_16)(k >> (64 - g_n));
 
-				const uint80 c0sq = ext_vector[id], c0sqp = q_vector[id];
+				const uint_80 c0sq = ext_vector[id], c0sqp = q_vector[id];
 #ifdef CHECK
-				const uint80 c0sqm = c0sqm_vector[id], q = qs_vector[id];
+				const uint_80 c0sqm = c0sqm_vector[id], q = qs_vector[id];
 #endif
 				for (size_t l = 0; l < factors_block; ++l)
 				{
-					const uint80 b = (c.s0 % 2 == 0) ? c : sub80(p, c);
+					const uint_80 b = (c.s0 % 2 == 0) ? c : sub80(p, c);
 					const bool found = ((b.s1 == 0) && (b.s0 <= 2000000000));
 
-					if (found) check(k, uint32(b.s0), n);
+					if (found) check(k, uint_32(b.s0), n);
 #ifdef CHECK
-					const uint80 cp = c;
+					const uint_80 cp = c;
 #endif
 					c = mul_mod_vs(c, c0sq, c0sqp, p);	// c = a^{(2*i + 1).k}
 #ifdef CHECK
@@ -563,9 +563,9 @@ int main()
 		// gcd(p mod 15, 15) = 1: 8 solutions
 		uint_8 wheel[8];
 		size_t i = 0;
-		for (uint64 k = 0; k < 15; ++k)
+		for (uint_64 k = 0; k < 15; ++k)
 		{
-			const uint64 p = (k << (n + 1)) | 1;
+			const uint_64 p = (k << (n + 1)) | 1;
 			if ((p % 3 == 0) || (p % 5 == 0)) continue;
 			wheel[i] = uint_8(k);
 			++i;
@@ -575,15 +575,15 @@ int main()
 		const int log2_block_size = 12;
 		const double unit = 1e15;
 
-		const uint32 p_min = 20000, p_max = p_min + 1;	// 18446 <= p <= 600000000
+		const uint_32 p_min = 20000, p_max = p_min + 1;	// 18446 <= p <= 600000000
 
 		const double f = unit * 8.0 / 15 / std::pow(2.0, double(log2_block_size + n + 1));
-		const uint64 i_min = uint64(std::floor(p_min * f)), i_max = uint64(std::ceil(p_max * f));
+		const uint_64 i_min = uint_64(std::floor(p_min * f)), i_max = uint_64(std::ceil(p_max * f));
 
 		mpz_t zp_min, zp_max; mpz_inits(zp_min, zp_max, nullptr);
 
-		const uint64 j_min = i_min << log2_block_size, j_max = i_max << log2_block_size;
-		const uint64 k_min = 15 * (j_min / 8) + wheel[j_min % 8], k_max = 15 * (j_max / 8) + wheel[j_max % 8];
+		const uint_64 j_min = i_min << log2_block_size, j_max = i_max << log2_block_size;
+		const uint_64 k_min = 15 * (j_min / 8) + wheel[j_min % 8], k_max = 15 * (j_max / 8) + wheel[j_max % 8];
 
 		mpz_set_u64(zp_min, k_min); mpz_mul_2exp(zp_min, zp_min, n + 1); mpz_add_ui(zp_min, zp_min, 1);
 		mpz_set_u64(zp_max, k_max); mpz_mul_2exp(zp_max, zp_max, n + 1); mpz_add_ui(zp_max, zp_max, 1);

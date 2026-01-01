@@ -39,55 +39,55 @@ inline bool prp_slow(const uint64_t p)
 
 typedef uint8_t		uint_8;
 typedef int8_t		int_8;
-typedef uint32_t	uint32;
-typedef uint64_t	uint64;
+typedef uint32_t	uint_32;
+typedef uint64_t	uint_64;
 
 // OpenCL functions
-inline uint32 atomic_inc(uint32 * const p) { const uint32 t = *p; (*p)++; return t; }
-inline uint64 mul_hi(const uint64 x, const uint64 y) { return uint64((x * __uint128_t(y)) >> 64); }
+inline uint_32 atomic_inc(uint_32 * const p) { const uint_32 t = *p; (*p)++; return t; }
+inline uint_64 mul_hi(const uint_64 x, const uint_64 y) { return uint_64((x * __uint128_t(y)) >> 64); }
 
-inline int ilog2(const uint64 x) { return 63 - __builtin_clzll(x); }
-inline bool bittest(const uint64 x, const int b) { return ((x & ((uint64)(1) << b)) != 0); }
+inline int ilog2(const uint_64 x) { return 63 - __builtin_clzll(x); }
+inline bool bittest(const uint_64 x, const int b) { return ((x & ((uint_64)(1) << b)) != 0); }
 
-inline uint64 add_mod(const uint64 a, const uint64 b, const uint64 p) { return a + b - ((a >= p - b) ? p : 0); }
-inline uint64 dup_mod(const uint64 a, const uint64 p) { return add_mod(a, a, p); }
-inline uint64 sub_mod(const uint64 a, const uint64 b, const uint64 p) { return a - b + ((a < b) ? p : 0); }
+inline uint_64 add_mod(const uint_64 a, const uint_64 b, const uint_64 p) { return a + b - ((a >= p - b) ? p : 0); }
+inline uint_64 dup_mod(const uint_64 a, const uint_64 p) { return add_mod(a, a, p); }
+inline uint_64 sub_mod(const uint_64 a, const uint_64 b, const uint_64 p) { return a - b + ((a < b) ? p : 0); }
 
 // Montgomery modular multiplication
-inline uint64 mul_mod(const uint64 a, const uint64 b, const uint64 p, const uint64 q)
+inline uint_64 mul_mod(const uint_64 a, const uint_64 b, const uint_64 p, const uint_64 q)
 {
-	const uint64 ab_l = a * b, ab_h = mul_hi(a, b);
+	const uint_64 ab_l = a * b, ab_h = mul_hi(a, b);
 	return sub_mod(ab_h, mul_hi(ab_l * q, p), p);
 }
 
-inline uint64 sqr_mod(const uint64 a, const uint64 p, const uint64 q) { return mul_mod(a, a, p, q); }
+inline uint_64 sqr_mod(const uint_64 a, const uint_64 p, const uint_64 q) { return mul_mod(a, a, p, q); }
 
-inline uint64 mul_mod_const(const uint64 a, const uint64 b, const uint64 p, const uint64 bq)
+inline uint_64 mul_mod_const(const uint_64 a, const uint_64 b, const uint_64 p, const uint_64 bq)
 {
-	const uint64 ab_h = mul_hi(a, b);
+	const uint_64 ab_h = mul_hi(a, b);
 	return sub_mod(ab_h, mul_hi(a * bq, p), p);
 }
 
 // Conversion out of Montgomery form
-inline uint64 Montgomery2int(const uint64 r, const uint64 p, const uint64 q)
+inline uint_64 Montgomery2int(const uint_64 r, const uint_64 p, const uint_64 q)
 {
-	const uint64 mp = mul_hi(r * q, p);
+	const uint_64 mp = mul_hi(r * q, p);
 	return (mp != 0) ? p - mp : 0;
 }
 
 // p * p_inv = 1 (mod 2^64) (Newton's method)
-inline uint64 invert(const uint64 p)
+inline uint_64 invert(const uint_64 p)
 {
-	uint64 p_inv = 2 - p;
-	uint64 prev; do { prev = p_inv; p_inv *= 2 - p * p_inv; } while (p_inv != prev);
+	uint_64 p_inv = 2 - p;
+	uint_64 prev; do { prev = p_inv; p_inv *= 2 - p * p_inv; } while (p_inv != prev);
 	return p_inv;
 }
 
 // a^e mod p, left-to-right algorithm
-inline uint64 pow_mod(const uint64 a, const uint64 e, const uint64 p, const uint64 q)
+inline uint_64 pow_mod(const uint_64 a, const uint_64 e, const uint_64 p, const uint_64 q)
 {
-	const uint64 aq = a * q;
-	uint64 r = a;
+	const uint_64 aq = a * q;
+	uint_64 r = a;
 	for (int b = ilog2(e) - 1; b >= 0; --b)
 	{
 		r = sqr_mod(r, p, q);
@@ -97,11 +97,11 @@ inline uint64 pow_mod(const uint64 a, const uint64 e, const uint64 p, const uint
 }
 
 // 2^{(p - 1)/2} ?= +/-1 mod p
-inline bool prp(const uint64 p, const uint64 q, const uint64 one)
+inline bool prp(const uint_64 p, const uint_64 q, const uint_64 one)
 {
-	const uint64 e = (p - 1) / 2;
+	const uint_64 e = (p - 1) / 2;
 	int b = ilog2(e) - 1;
-	uint64 r = dup_mod(one, p);	// 2 = 1 + 1
+	uint_64 r = dup_mod(one, p);	// 2 = 1 + 1
 	r = dup_mod(r, p);			// 2 * 2 = 2 + 2
 	if (bittest(e, b)) r = dup_mod(r, p);
 	for (--b; b >= 0; --b)
@@ -112,7 +112,7 @@ inline bool prp(const uint64 p, const uint64 q, const uint64 one)
 	return ((r == one) || (r == p - one));
 }
 
-static void check(const uint64 k , const uint32 b, const int n)
+static void check(const uint_64 k , const uint_32 b, const int n)
 {
 	mpz_t zp, zr, zt; mpz_inits(zp, zr, zt, nullptr);
 
@@ -152,31 +152,31 @@ static void check(const uint64 k , const uint32 b, const int n)
 	mpz_clears(zp, zr, zt, nullptr);
 }
 
-static void test(const uint64 i_min, const uint64 i_max, const int n, const int log2_block_size, const uint_8 * const wheel, const int_8 * const kro_vector)
+static void test(const uint_64 i_min, const uint_64 i_max, const int n, const int log2_block_size, const uint_8 * const wheel, const int_8 * const kro_vector)
 {
 	const size_t block_size = size_t(1) << log2_block_size;
 	const size_t factors_block = size_t(1) << 10;
 	const size_t N_2_factors_block = (size_t(1) << (n - 1)) / factors_block;
 	const int g_n = n + 1;
 
-	uint64 * const k_vector = new uint64[block_size];
-	uint64 * const q_vector = new uint64[block_size];
-	uint64 * const ext_vector = new uint64[block_size];
-	uint64 * const c_vector = new uint64[block_size];
-	uint64 * const cn_vector = new uint64[block_size];
+	uint_64 * const k_vector = new uint_64[block_size];
+	uint_64 * const q_vector = new uint_64[block_size];
+	uint_64 * const ext_vector = new uint_64[block_size];
+	uint_64 * const c_vector = new uint_64[block_size];
+	uint_64 * const cn_vector = new uint_64[block_size];
 
-	uint32 prime_count = 0;
+	uint_32 prime_count = 0;
 
-	for (uint64 i = i_min; i < i_max; ++i)
+	for (uint_64 i = i_min; i < i_max; ++i)
 	{
 		// generate_primes
-		for (uint64 id = 0; id < block_size; ++id)
+		for (uint_64 id = 0; id < block_size; ++id)
 		{
-			const uint64 j = (i << log2_block_size) | id;
-			const uint64 k = 15 * (j / 8) + wheel[j % 8];
+			const uint_64 j = (i << log2_block_size) | id;
+			const uint_64 k = 15 * (j / 8) + wheel[j % 8];
 
 			// one is the Montgomery form of 1: 2^64 mod p = (2^64 - p) mod p
-			const uint64 p = (k << g_n) | 1, q = invert(p), one = (-p) % p;
+			const uint_64 p = (k << g_n) | 1, q = invert(p), one = (-p) % p;
 #ifdef CHECK
 			if ((p % 3 == 0) || (p % 5 == 0)) throw std::runtime_error("Error: wheel.");
 #endif
@@ -186,7 +186,7 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 #endif
 			if (isprp)
 			{
-				const uint32 prime_index = atomic_inc(&prime_count);
+				const uint_32 prime_index = atomic_inc(&prime_count);
 				k_vector[prime_index] = k;
 				q_vector[prime_index] = q;
 				ext_vector[prime_index] = one;
@@ -200,30 +200,30 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 		std::cout << i << ": " << prime_count << " primes (" << expected << ")" << std::endl;
 
 		// init_factors
-		for (uint64 id = 0; id < block_size; ++id)
+		for (uint_64 id = 0; id < block_size; ++id)
 		{
 			if (id >= prime_count) break;
 
-			const uint64 k = k_vector[id], q = q_vector[id], one = ext_vector[id];
+			const uint_64 k = k_vector[id], q = q_vector[id], one = ext_vector[id];
 
-			const uint64 p = (k << g_n) | 1;
-			const uint64 two = dup_mod(one, p);
+			const uint_64 p = (k << g_n) | 1;
+			const uint_64 two = dup_mod(one, p);
 
 			// p = 1 (mod 4). If a is odd then (a/p) = (p/a) = ({p mod a}/a)
 
-			uint32 a = 3; uint64 am = add_mod(two, one, p);
+			uint_32 a = 3; uint_64 am = add_mod(two, one, p);
 			if (p % 3 != 2)
 			{
 				a += 2; am = add_mod(am, two, p);
-				if (kro_vector[256 * ((5 - 3) / 2) + (uint32)(p % 5)] >= 0)
+				if (kro_vector[256 * ((5 - 3) / 2) + (uint_32)(p % 5)] >= 0)
 				{
 					a += 2; am = add_mod(am, two, p);
-					if (kro_vector[256 * ((7 - 3) / 2) + (uint32)(p % 7)] >= 0)
+					if (kro_vector[256 * ((7 - 3) / 2) + (uint_32)(p % 7)] >= 0)
 					{
 						a += 4; am = add_mod(am, dup_mod(two, p), p);
 						while (a < 256)
 						{
-							if (kro_vector[256 * ((a - 3) / 2) + (uint32)(p % a)] < 0) break;
+							if (kro_vector[256 * ((a - 3) / 2) + (uint_32)(p % a)] < 0) break;
 							a += 2; am = add_mod(am, two, p);
 						}
 						if (a >= 256) { a = 0; am = 0; }
@@ -234,8 +234,8 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 			if (pow_mod(am, (p - 1) / 2, p, q) != p - one) throw std::runtime_error("Error: a.");
 #endif
 			// a^{(p - 1)/2} = -1 <=> a^{k*2^n} = -1. (a^k)^{2*i + 1} are the roots of b^{2^n} + 1 = 0 (mod p)
-			const uint64 cm = pow_mod(am, k, p, q);
-			const uint64 c = Montgomery2int(cm, p, q);
+			const uint_64 cm = pow_mod(am, k, p, q);
+			const uint_64 c = Montgomery2int(cm, p, q);
 			c_vector[id] = c;
 			ext_vector[id] = sqr_mod(cm, p, q);
 			cn_vector[id] = p - c;
@@ -246,27 +246,27 @@ static void test(const uint64 i_min, const uint64 i_max, const int n, const int 
 		{
 			// std::cout << j << " / " << N_2_factors_block << std::endl;
 
-			for (uint64 id = 0; id < block_size; ++id)
+			for (uint_64 id = 0; id < block_size; ++id)
 			{
 				if (id >= prime_count) break;
 
-				uint64 c = c_vector[id];
+				uint_64 c = c_vector[id];
 				if (c == 0) continue;
 
-				const uint64 k = k_vector[id], p = (k << g_n) | 1, q = q_vector[id];
-				const uint64 c0sq = ext_vector[id], c0sqxq = c0sq * q;
+				const uint_64 k = k_vector[id], p = (k << g_n) | 1, q = q_vector[id];
+				const uint_64 c0sq = ext_vector[id], c0sqxq = c0sq * q;
 
 #ifdef CHECK
-				uint64 c0sq_check = Montgomery2int(c0sq, p, q);
+				uint_64 c0sq_check = Montgomery2int(c0sq, p, q);
 #endif
 				for (size_t l = 0; l < factors_block; ++l)
 				{
-					const uint64 b = (c % 2 == 0) ? c : p - c;
+					const uint_64 b = (c % 2 == 0) ? c : p - c;
 					const bool found = (b <= 2000000000);
 
-					if (found) check(k, uint32(b), n);
+					if (found) check(k, uint_32(b), n);
 #ifdef CHECK
-					const uint64 cp = c;
+					const uint_64 cp = c;
 #endif
 					c = mul_mod_const(c, c0sq, p, c0sqxq);	// c = a^{(2*i + 1).k}
 #ifdef CHECK
@@ -311,9 +311,9 @@ int main()
 		// gcd(p mod 15, 15) = 1: 8 solutions
 		uint_8 wheel[8];
 		size_t i = 0;
-		for (uint64 k = 0; k < 15; ++k)
+		for (uint_64 k = 0; k < 15; ++k)
 		{
-			const uint64 p = (k << (n + 1)) | 1;
+			const uint_64 p = (k << (n + 1)) | 1;
 			if ((p % 3 == 0) || (p % 5 == 0)) continue;
 			wheel[i] = uint_8(k);
 			++i;
@@ -323,15 +323,15 @@ int main()
 		const int log2_block_size = 12;
 		const double unit = 1e15;
 
-		const uint32 p_min = 100, p_max = p_min + 1;	// 1 <= p < 18446
+		const uint_32 p_min = 100, p_max = p_min + 1;	// 1 <= p < 18446
 
 		const double f = unit * 8.0 / 15 / std::pow(2.0, double(log2_block_size + n + 1));
-		const uint64 i_min = uint64(std::floor(p_min * f)), i_max = uint64(std::ceil(p_max * f));
+		const uint_64 i_min = uint_64(std::floor(p_min * f)), i_max = uint_64(std::ceil(p_max * f));
 
 		mpz_t zp_min, zp_max; mpz_inits(zp_min, zp_max, nullptr);
 
-		const uint64 j_min = i_min << log2_block_size, j_max = i_max << log2_block_size;
-		const uint64 k_min = 15 * (j_min / 8) + wheel[j_min % 8], k_max = 15 * (j_max / 8) + wheel[j_max % 8];
+		const uint_64 j_min = i_min << log2_block_size, j_max = i_max << log2_block_size;
+		const uint_64 k_min = 15 * (j_min / 8) + wheel[j_min % 8], k_max = 15 * (j_max / 8) + wheel[j_max % 8];
 
 		mpz_set_u64(zp_min, k_min); mpz_mul_2exp(zp_min, zp_min, n + 1); mpz_add_ui(zp_min, zp_min, 1);
 		mpz_set_u64(zp_max, k_max); mpz_mul_2exp(zp_max, zp_max, n + 1); mpz_add_ui(zp_max, zp_max, 1);

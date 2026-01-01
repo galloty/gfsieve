@@ -170,7 +170,7 @@ private:
 		{
 			_error.resize(error_count);
 			eng.read_errors(_error.data(), error_count);
-			std::cout << error_count << " errors" << std::endl;
+			// std::cout << error_count << " error(s)      " << std::endl;
 
 			const int n = _n;
 			mpz_t zp; mpz_init(zp);
@@ -182,6 +182,7 @@ private:
 					std::ostringstream ss; ss << k << " * " << "2^" << n + 1 << " + 1: validation failed";
 					throw std::runtime_error(ss.str());
 				}
+				// else std::cout << k << " * " << "2^" << n + 1 << " + 1 is not prime." << std::endl;
 			}
 			mpz_clear(zp);
 		}
