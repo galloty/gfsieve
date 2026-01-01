@@ -10,6 +10,7 @@ Prime factors *p* are in the range 10<sup>15</sup>&nbsp;&le;&nbsp;*p*&nbsp;&le;&
 A CPU application is available for *p*&nbsp;&le;&nbsp;10<sup>15</sup>.  
 
 It is based on Phil Carmody's algorithm (http://fatphil.org/maths/GFN/maths.html).  
+The computation is validated using the relation: if *p* = *k*&thinsp;&middot;&thinsp;2<sup>*n*+1</sup>+1 | *b*<sup>2<sup>n</sup></sup>&nbsp;+&nbsp;1 then *b*<sup>2*n*+1</sup> = -b (mod p).  
 
 gfsieve is a highly optimised GPU application, created in 2020.
 
@@ -17,6 +18,6 @@ gfsieve is a highly optimised GPU application, created in 2020.
 
 This version was compiled with gcc and tested on Windows and Linux (Ubuntu).  
 
-An OpenCL SDK is not required. OpenCL header files are included in the project and the application can be linked with the dynamic OpenCL library of the OS.
+An OpenCL SDK is not required. OpenCL header files are included in the project and the application is linked to the dynamic OpenCL library of the OS.
 
 ## TODO

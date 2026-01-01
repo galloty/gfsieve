@@ -54,7 +54,8 @@ protected:
 	static constexpr int _log2_block_size = 22;	// => > 285000 primes
 	timer::time _start_time;
 	std::string _extension;
-	std::vector<uint64_2> _factor;
+	std::vector<uint_64_2> _factor;
+	std::vector<uint_64> _error;
 	static constexpr double _unit = 1e15;
 
 private:
@@ -105,8 +106,7 @@ private:
 		src << "#define LN_BLKSZ\t" << _log2_block_size << std::endl;
 		src << "#define FBLK\t" << _factors_block << std::endl;
 		src << std::endl;
-
-		src << "#define uint_8\tuchar" << std::endl;
+		src << "typedef	uchar\tuint_8;" << std::endl;
 		src << "__constant uint_8 wheel[8] = { ";
 		for (size_t i = 0; i < 8; ++i) { src << int(_wheel[i]); if (i != 7) src << ", "; }
 		src << " };" << std::endl << std::endl;
@@ -150,10 +150,41 @@ private:
 		eng.clearProgram();
 	}
 
+	static bool is_prp(const mpz_t & zp)
+	{
+		mpz_t zt; mpz_init(zt);
+		for (uint32_t a = 3; a < 1000; a += 2)
+		{
+			mpz_set_ui(zt, a); mpz_powm(zt, zt, zp, zp);
+			if (mpz_cmp_ui(zt, a) != 0) { mpz_clear(zt); return false; }
+		}
+		mpz_clear(zt); return true;
+	}
+
 	size_t read_factors(engine & eng, const double dp)
 	{
-		const size_t factor_count = eng.read_factor_count();
+		const size_t factor_count = eng.read_factor_count(), error_count = eng.read_error_count();
 		const double elapsed_time = timer::diff_time(timer::current_time(), _start_time);
+
+		if (error_count > 0)
+		{
+			_error.resize(error_count);
+			eng.read_errors(_error.data(), error_count);
+			std::cout << error_count << " errors" << std::endl;
+
+			const int n = _n;
+			mpz_t zp; mpz_init(zp);
+			for (const cl_ulong k : _error)
+			{
+				mpz_set_u64(zp, k); mpz_mul_2exp(zp, zp, mp_bitcnt_t(n + 1)); mpz_add_ui(zp, zp, 1);
+				// if (is_prp(zp))
+				{
+					std::ostringstream ss; ss << k << " * " << "2^" << n + 1 << " + 1: validation failed";
+					throw std::runtime_error(ss.str());
+				}
+			}
+			mpz_clear(zp);
+		}
 
 		if (factor_count >= _max_factor_size) throw std::runtime_error("factor count is too large");
 
@@ -177,7 +208,7 @@ private:
 	bool record_factors()
 	{
 		bool success = false;
-		mpz_t zp, zr, zt; mpz_inits(zp, zr, zt, nullptr);
+		mpz_t zp, zr; mpz_inits(zp, zr, nullptr);
 
 		const std::string res_filename = std::string("gf") + _extension;
 		std::ofstream res_file(res_filename, std::ios::app);
@@ -187,9 +218,7 @@ private:
 			for (const cl_ulong2 f : _factor)
 			{
 				const uint32_t b = uint32_t(f.s[1]);
-				if (b > 2000000000u) continue;
-				mpz_set_ui(zp, uint32_t(f.s[0] >> 32)); mpz_mul_2exp(zp, zp, 32); mpz_add_ui(zp, zp, uint32_t(f.s[0]));
-				mpz_mul_2exp(zp, zp, mp_bitcnt_t(n + 1)); mpz_add_ui(zp, zp, 1);
+				mpz_set_u64(zp, f.s[0]); mpz_mul_2exp(zp, zp, mp_bitcnt_t(n + 1)); mpz_add_ui(zp, zp, 1);
 				char str[32]; mpz_get_str(str, 10, zp);
 
 				mpz_set_ui(zr, b); mpz_powm_ui(zr, zr, uint32_t(1) << n, zp); mpz_add_ui(zr, zr, 1);
@@ -201,23 +230,13 @@ private:
 				}
 				else
 				{
-					mpz_set_ui(zt, 2); mpz_powm(zt, zt, zp, zp);
-					if (mpz_cmp_ui(zt, 2) != 0)
+					mpz_set_ui(zr, 2); mpz_powm(zr, zr, zp, zp);
+					if (mpz_cmp_ui(zr, 2) != 0)
 					{
 						std::ostringstream ss; ss << str << " is not 2-prp";
 						throw std::runtime_error(ss.str());
 					}
-					bool is_prime = true;
-					for (uint32_t a = 3; a < 1000; a += 2)
-					{
-						mpz_set_ui(zt, a); mpz_powm(zt, zt, zp, zp);
-						if (mpz_cmp_ui(zt, a) != 0)
-						{
-							is_prime = false;
-							break;
-						}
-					}
-					if (is_prime)
+					if (is_prp(zp))
 					{
 						std::ostringstream ss; ss << str << " doesn't divide " << b << "^{2^" << n << "}+1";
 						throw std::runtime_error(ss.str());
@@ -228,7 +247,7 @@ private:
 			success = true;
 		}
 
-		mpz_clears(zp, zr, zt, nullptr);
+		mpz_clears(zp, zr, nullptr);
 		return success;
 	}
 
@@ -250,9 +269,9 @@ private:
 		}
 	}
 
-	uint64 get_k(const uint64 i) const
+	uint_64 get_k(const uint_64 i) const
 	{
-		const uint64 j = i << _log2_block_size;
+		const uint_64 j = i << _log2_block_size;
 		return 15 * (j / 8) + _wheel[j % 8];
 	}
 
@@ -267,9 +286,9 @@ public:
 
 		// gcd(p mod 15, 15) = 1: 8 solutions
 		size_t i = 0;
-		for (uint64 k = 0; k < 15; ++k)
+		for (uint_64 k = 0; k < 15; ++k)
 		{
-			const uint64 p = (k << (n + 1)) | 1;
+			const uint_64 p = (k << (n + 1)) | 1;
 			if ((p % 3 == 0) || (p % 5 == 0)) continue;
 			_wheel[i] = uint_8(k);
 			++i;
@@ -292,8 +311,8 @@ public:
 		const size_t N_2_factors_block = (size_t(1) << (n - 1)) / _factors_block;
 
 		const double f = _unit * 8.0 / 15 / std::pow(2.0, double(_log2_block_size + n + 1));
-		const uint64 i_min = uint64(floor(p_min * f)), i_max = uint64(ceil(p_max * f));
-		const uint64 i_start = i_min + cnt;
+		const uint_64 i_min = uint_64(floor(p_min * f)), i_max = uint_64(ceil(p_max * f));
+		const uint_64 i_start = i_min + cnt;
 
 		mpz_t zp_min, zp_max; mpz_inits(zp_min, zp_max, nullptr);
 
@@ -309,7 +328,7 @@ public:
 		const double log_p_min = std::log(get_k(i_start)) + (n + 1) * std::log(2), log_p_max = std::log(get_k(i_max)) + (n + 1) * std::log(2);
 		const double count = (std::log(log_p_max) - std::log(log_p_min)) * 1e9;
 		std::cout << "Expected number of factors : ";
-		if (count >= 1000) std::cout << uint64(count); else std::cout << count;
+		if (count >= 1000) std::cout << uint_64(count); else std::cout << count;
 		std::cout << std::endl;
 		if (count > 0.9 * _max_factor_size) throw std::runtime_error("range is too large");
 
@@ -318,7 +337,7 @@ public:
 
 		const size_t block_size = size_t(1) << _log2_block_size, prime_size = block_size / 4;
 
-		for (uint64 i = i_start; i < i_max; ++i)
+		for (uint_64 i = i_start; i < i_max; ++i)
 		{
 			if (_quit) break;
 
