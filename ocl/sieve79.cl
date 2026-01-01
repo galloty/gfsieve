@@ -60,7 +60,7 @@ inline uint_80 add80(const uint_80 x, const uint_80 y)
 {
 	uint_80 r;
 #ifdef PTX_ASM
-	const uint32 xhi = x.hi, yhi = y.hi; uint32 rhi;
+	const uint_32 xhi = x.hi, yhi = y.hi; uint_32 rhi;
 	asm volatile ("add.cc.u64 %0, %1, %2;" : "=l" (r.lo) : "l" (x.lo), "l" (y.lo));
 	asm volatile ("addc.u32 %0, %1, %2;" : "=r" (rhi) : "r" (xhi), "r" (yhi));
 	r.hi = (uint_16)(rhi);
@@ -78,7 +78,7 @@ inline uint_80 sub80(const uint_80 x, const uint_80 y)
 {
 	uint_80 r;
 #ifdef PTX_ASM
-	const uint32 xhi = x.hi, yhi = y.hi; uint32 rhi;
+	const uint_32 xhi = x.hi, yhi = y.hi; uint_32 rhi;
 	asm volatile ("sub.cc.u64 %0, %1, %2;" : "=l" (r.lo) : "l" (x.lo), "l" (y.lo));
 	asm volatile ("subc.u32 %0, %1, %2;" : "=r" (rhi) : "r" (xhi), "r" (yhi));
 	r.hi = (uint_16)(rhi);
@@ -96,7 +96,7 @@ inline uint_80 neg80(const uint_80 x)
 {
 	uint_80 r;
 #ifdef PTX_ASM
-	const uint32 xhi = x.hi; uint32 rhi;
+	const uint_32 xhi = x.hi; uint_32 rhi;
 	asm volatile ("sub.cc.u64 %0, 0, %1;" : "=l" (r.lo) : "l" (x.lo));
 	asm volatile ("subc.u32 %0, 0, %1;" : "=r" (rhi) : "r" (xhi));
 	r.hi = (uint_16)(rhi);

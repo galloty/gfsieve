@@ -72,7 +72,7 @@ static const char * const src_ocl_sieve79 = \
 "{\n" \
 "	uint_80 r;\n" \
 "#ifdef PTX_ASM\n" \
-"	const uint32 xhi = x.hi, yhi = y.hi; uint32 rhi;\n" \
+"	const uint_32 xhi = x.hi, yhi = y.hi; uint_32 rhi;\n" \
 "	asm volatile (\"add.cc.u64 %0, %1, %2;\" : \"=l\" (r.lo) : \"l\" (x.lo), \"l\" (y.lo));\n" \
 "	asm volatile (\"addc.u32 %0, %1, %2;\" : \"=r\" (rhi) : \"r\" (xhi), \"r\" (yhi));\n" \
 "	r.hi = (uint_16)(rhi);\n" \
@@ -90,7 +90,7 @@ static const char * const src_ocl_sieve79 = \
 "{\n" \
 "	uint_80 r;\n" \
 "#ifdef PTX_ASM\n" \
-"	const uint32 xhi = x.hi, yhi = y.hi; uint32 rhi;\n" \
+"	const uint_32 xhi = x.hi, yhi = y.hi; uint_32 rhi;\n" \
 "	asm volatile (\"sub.cc.u64 %0, %1, %2;\" : \"=l\" (r.lo) : \"l\" (x.lo), \"l\" (y.lo));\n" \
 "	asm volatile (\"subc.u32 %0, %1, %2;\" : \"=r\" (rhi) : \"r\" (xhi), \"r\" (yhi));\n" \
 "	r.hi = (uint_16)(rhi);\n" \
@@ -108,7 +108,7 @@ static const char * const src_ocl_sieve79 = \
 "{\n" \
 "	uint_80 r;\n" \
 "#ifdef PTX_ASM\n" \
-"	const uint32 xhi = x.hi; uint32 rhi;\n" \
+"	const uint_32 xhi = x.hi; uint_32 rhi;\n" \
 "	asm volatile (\"sub.cc.u64 %0, 0, %1;\" : \"=l\" (r.lo) : \"l\" (x.lo));\n" \
 "	asm volatile (\"subc.u32 %0, 0, %1;\" : \"=r\" (rhi) : \"r\" (xhi));\n" \
 "	r.hi = (uint_16)(rhi);\n" \
