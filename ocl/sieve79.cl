@@ -58,45 +58,54 @@ inline bool z80(const uint_80 x)	// x is equal to 0
 
 inline uint_80 add80(const uint_80 x, const uint_80 y)
 {
+	uint_80 r;
+#ifdef PTX_ASM
+	const uint32 xhi = x.hi, yhi = y.hi; uint32 rhi;
+	asm volatile ("add.cc.u64 %0, %1, %2;" : "=l" (r.lo) : "l" (x.lo), "l" (y.lo));
+	asm volatile ("addc.u32 %0, %1, %2;" : "=r" (rhi) : "r" (xhi), "r" (yhi));
+	r.hi = (uint_16)(rhi);
+#else
 	const uint_32 xlo = lo32(x.lo); const uint_64 xhi = upsample((uint_32)(x.hi), hi32(x.lo));
 	const uint_32 ylo = lo32(y.lo); const uint_64 yhi = upsample((uint_32)(y.hi), hi32(y.lo));
 	uint_32 rlo; uint_64 rhi;
-#ifdef PTX_ASM
-	asm volatile ("add.cc.u32 %0, %1, %2;" : "=r" (rlo) : "r" (xlo), "r" (ylo));
-	asm volatile ("addc.u64 %0, %1, %2;" : "=l" (rhi) : "l" (xhi), "l" (yhi));
-#else
 	rlo = xlo + ylo; rhi = xhi + yhi + ((rlo < xlo) ? 1 : 0);
+	r.lo = upsample(lo32(rhi), rlo); r.hi = (uint_16)(hi32(rhi));
 #endif
-	uint_80 r; r.lo = upsample(lo32(rhi), rlo); r.hi = (uint_16)(hi32(rhi));
 	return r;
 }
 
 inline uint_80 sub80(const uint_80 x, const uint_80 y)
 {
+	uint_80 r;
+#ifdef PTX_ASM
+	const uint32 xhi = x.hi, yhi = y.hi; uint32 rhi;
+	asm volatile ("sub.cc.u64 %0, %1, %2;" : "=l" (r.lo) : "l" (x.lo), "l" (y.lo));
+	asm volatile ("subc.u32 %0, %1, %2;" : "=r" (rhi) : "r" (xhi), "r" (yhi));
+	r.hi = (uint_16)(rhi);
+#else
 	const uint_32 xlo = lo32(x.lo); const uint_64 xhi = upsample((uint_32)(x.hi), hi32(x.lo));
 	const uint_32 ylo = lo32(y.lo); const uint_64 yhi = upsample((uint_32)(y.hi), hi32(y.lo));
 	uint_32 rlo; uint_64 rhi;
-#ifdef PTX_ASM
-	asm volatile ("sub.cc.u32 %0, %1, %2;" : "=r" (rlo) : "r" (xlo), "r" (ylo));
-	asm volatile ("subc.u64 %0, %1, %2;" : "=l" (rhi) : "l" (xhi), "l" (yhi));
-#else
 	rlo = xlo - ylo; rhi = xhi - yhi - ((xlo < ylo) ? 1 : 0);
+	r.lo = upsample(lo32(rhi), rlo); r.hi = (uint_16)(hi32(rhi));
 #endif
-	uint_80 r; r.lo = upsample(lo32(rhi), rlo); r.hi = (uint_16)(hi32(rhi));
 	return r;
 }
 
 inline uint_80 neg80(const uint_80 x)
 {
+	uint_80 r;
+#ifdef PTX_ASM
+	const uint32 xhi = x.hi; uint32 rhi;
+	asm volatile ("sub.cc.u64 %0, 0, %1;" : "=l" (r.lo) : "l" (x.lo));
+	asm volatile ("subc.u32 %0, 0, %1;" : "=r" (rhi) : "r" (xhi));
+	r.hi = (uint_16)(rhi);
+#else
 	const uint_32 xlo = lo32(x.lo); const uint_64 xhi = upsample((uint_32)(x.hi), hi32(x.lo));
 	uint_32 rlo; uint_64 rhi;
-#ifdef PTX_ASM
-	asm volatile ("sub.cc.u32 %0, 0, %1;" : "=l" (rlo) : "l" (xlo));
-	asm volatile ("subc.u64 %0, 0, %1;" : "=r" (rhi) : "r" (xhi));
-#else
 	rlo = -x.lo; rhi = -xhi - ((x.lo != 0) ? 1 : 0);
+	r.lo = upsample(lo32(rhi), rlo); r.hi = (uint_16)(hi32(rhi));
 #endif
-	uint_80 r; r.lo = upsample(lo32(rhi), rlo); r.hi = (uint_16)(hi32(rhi));
 	return r;
 }
 

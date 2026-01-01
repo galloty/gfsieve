@@ -70,45 +70,54 @@ static const char * const src_ocl_sieve79 = \
 "\n" \
 "inline uint_80 add80(const uint_80 x, const uint_80 y)\n" \
 "{\n" \
+"	uint_80 r;\n" \
+"#ifdef PTX_ASM\n" \
+"	const uint32 xhi = x.hi, yhi = y.hi; uint32 rhi;\n" \
+"	asm volatile (\"add.cc.u64 %0, %1, %2;\" : \"=l\" (r.lo) : \"l\" (x.lo), \"l\" (y.lo));\n" \
+"	asm volatile (\"addc.u32 %0, %1, %2;\" : \"=r\" (rhi) : \"r\" (xhi), \"r\" (yhi));\n" \
+"	r.hi = (uint_16)(rhi);\n" \
+"#else\n" \
 "	const uint_32 xlo = lo32(x.lo); const uint_64 xhi = upsample((uint_32)(x.hi), hi32(x.lo));\n" \
 "	const uint_32 ylo = lo32(y.lo); const uint_64 yhi = upsample((uint_32)(y.hi), hi32(y.lo));\n" \
 "	uint_32 rlo; uint_64 rhi;\n" \
-"#ifdef PTX_ASM\n" \
-"	asm volatile (\"add.cc.u32 %0, %1, %2;\" : \"=r\" (rlo) : \"r\" (xlo), \"r\" (ylo));\n" \
-"	asm volatile (\"addc.u64 %0, %1, %2;\" : \"=l\" (rhi) : \"l\" (xhi), \"l\" (yhi));\n" \
-"#else\n" \
 "	rlo = xlo + ylo; rhi = xhi + yhi + ((rlo < xlo) ? 1 : 0);\n" \
+"	r.lo = upsample(lo32(rhi), rlo); r.hi = (uint_16)(hi32(rhi));\n" \
 "#endif\n" \
-"	uint_80 r; r.lo = upsample(lo32(rhi), rlo); r.hi = (uint_16)(hi32(rhi));\n" \
 "	return r;\n" \
 "}\n" \
 "\n" \
 "inline uint_80 sub80(const uint_80 x, const uint_80 y)\n" \
 "{\n" \
+"	uint_80 r;\n" \
+"#ifdef PTX_ASM\n" \
+"	const uint32 xhi = x.hi, yhi = y.hi; uint32 rhi;\n" \
+"	asm volatile (\"sub.cc.u64 %0, %1, %2;\" : \"=l\" (r.lo) : \"l\" (x.lo), \"l\" (y.lo));\n" \
+"	asm volatile (\"subc.u32 %0, %1, %2;\" : \"=r\" (rhi) : \"r\" (xhi), \"r\" (yhi));\n" \
+"	r.hi = (uint_16)(rhi);\n" \
+"#else\n" \
 "	const uint_32 xlo = lo32(x.lo); const uint_64 xhi = upsample((uint_32)(x.hi), hi32(x.lo));\n" \
 "	const uint_32 ylo = lo32(y.lo); const uint_64 yhi = upsample((uint_32)(y.hi), hi32(y.lo));\n" \
 "	uint_32 rlo; uint_64 rhi;\n" \
-"#ifdef PTX_ASM\n" \
-"	asm volatile (\"sub.cc.u32 %0, %1, %2;\" : \"=r\" (rlo) : \"r\" (xlo), \"r\" (ylo));\n" \
-"	asm volatile (\"subc.u64 %0, %1, %2;\" : \"=l\" (rhi) : \"l\" (xhi), \"l\" (yhi));\n" \
-"#else\n" \
 "	rlo = xlo - ylo; rhi = xhi - yhi - ((xlo < ylo) ? 1 : 0);\n" \
+"	r.lo = upsample(lo32(rhi), rlo); r.hi = (uint_16)(hi32(rhi));\n" \
 "#endif\n" \
-"	uint_80 r; r.lo = upsample(lo32(rhi), rlo); r.hi = (uint_16)(hi32(rhi));\n" \
 "	return r;\n" \
 "}\n" \
 "\n" \
 "inline uint_80 neg80(const uint_80 x)\n" \
 "{\n" \
+"	uint_80 r;\n" \
+"#ifdef PTX_ASM\n" \
+"	const uint32 xhi = x.hi; uint32 rhi;\n" \
+"	asm volatile (\"sub.cc.u64 %0, 0, %1;\" : \"=l\" (r.lo) : \"l\" (x.lo));\n" \
+"	asm volatile (\"subc.u32 %0, 0, %1;\" : \"=r\" (rhi) : \"r\" (xhi));\n" \
+"	r.hi = (uint_16)(rhi);\n" \
+"#else\n" \
 "	const uint_32 xlo = lo32(x.lo); const uint_64 xhi = upsample((uint_32)(x.hi), hi32(x.lo));\n" \
 "	uint_32 rlo; uint_64 rhi;\n" \
-"#ifdef PTX_ASM\n" \
-"	asm volatile (\"sub.cc.u32 %0, 0, %1;\" : \"=l\" (rlo) : \"l\" (xlo));\n" \
-"	asm volatile (\"subc.u64 %0, 0, %1;\" : \"=r\" (rhi) : \"r\" (xhi));\n" \
-"#else\n" \
 "	rlo = -x.lo; rhi = -xhi - ((x.lo != 0) ? 1 : 0);\n" \
+"	r.lo = upsample(lo32(rhi), rlo); r.hi = (uint_16)(hi32(rhi));\n" \
 "#endif\n" \
-"	uint_80 r; r.lo = upsample(lo32(rhi), rlo); r.hi = (uint_16)(hi32(rhi));\n" \
 "	return r;\n" \
 "}\n" \
 "\n" \
