@@ -177,7 +177,7 @@ private:
 			for (const cl_ulong k : _error)
 			{
 				mpz_set_u64(zp, k); mpz_mul_2exp(zp, zp, mp_bitcnt_t(n + 1)); mpz_add_ui(zp, zp, 1);
-				// if (is_prp(zp))
+				if (is_prp(zp))
 				{
 					std::ostringstream ss; ss << k << " * " << "2^" << n + 1 << " + 1: validation failed";
 					throw std::runtime_error(ss.str());

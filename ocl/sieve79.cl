@@ -58,46 +58,45 @@ inline bool z80(const uint_80 x)	// x is equal to 0
 
 inline uint_80 add80(const uint_80 x, const uint_80 y)
 {
-	uint_80 r;
+	const uint_32 xlo = lo32(x.lo); const uint_64 xhi = upsample((uint_32)(x.hi), hi32(x.lo));
+	const uint_32 ylo = lo32(y.lo); const uint_64 yhi = upsample((uint_32)(y.hi), hi32(y.lo));
+	uint_32 rlo; uint_64 rhi;
 #ifdef PTX_ASM
-	const uint32 xhi = x.hi, yhi = y.hi;
-	uint32 rhi;
-	asm volatile ("add.cc.u64 %0, %1, %2;" : "=l" (r.lo) : "l" (x.lo), "l" (y.lo));
-	asm volatile ("addc.u32 %0, %1, %2;" : "=r" (rhi) : "r" (xhi), "r" (yhi));
-	r.hi = (uint_16)(rhi);
+	asm volatile ("add.cc.u32 %0, %1, %2;" : "=r" (rlo) : "r" (xlo), "r" (ylo));
+	asm volatile ("addc.u64 %0, %1, %2;" : "=l" (rhi) : "l" (xhi), "l" (yhi));
 #else
-	r.lo = x.lo + y.lo; r.hi = x.hi + y.hi + ((r.lo < x.lo) ? 1 : 0);
+	rlo = xlo + ylo; rhi = xhi + yhi + ((rlo < xlo) ? 1 : 0);
 #endif
+	uint_80 r; r.lo = upsample(lo32(rhi), rlo); r.hi = (uint_16)(hi32(rhi));
 	return r;
 }
 
 inline uint_80 sub80(const uint_80 x, const uint_80 y)
 {
-	uint_80 r;
+	const uint_32 xlo = lo32(x.lo); const uint_64 xhi = upsample((uint_32)(x.hi), hi32(x.lo));
+	const uint_32 ylo = lo32(y.lo); const uint_64 yhi = upsample((uint_32)(y.hi), hi32(y.lo));
+	uint_32 rlo; uint_64 rhi;
 #ifdef PTX_ASM
-	const uint32 xhi = x.hi, yhi = y.hi;
-	uint32 rhi;
-	asm volatile ("sub.cc.u64 %0, %1, %2;" : "=l" (r.lo) : "l" (x.lo), "l" (y.lo));
-	asm volatile ("subc.u32 %0, %1, %2;" : "=r" (rhi) : "r" (xhi), "r" (yhi));
-	r.hi = (uint_16)(rhi);
+	asm volatile ("sub.cc.u32 %0, %1, %2;" : "=r" (rlo) : "r" (xlo), "r" (ylo));
+	asm volatile ("subc.u64 %0, %1, %2;" : "=l" (rhi) : "l" (xhi), "l" (yhi));
 #else
-	r.lo = x.lo - y.lo; r.hi = x.hi - y.hi - ((x.lo < y.lo) ? 1 : 0);
+	rlo = xlo - ylo; rhi = xhi - yhi - ((xlo < ylo) ? 1 : 0);
 #endif
+	uint_80 r; r.lo = upsample(lo32(rhi), rlo); r.hi = (uint_16)(hi32(rhi));
 	return r;
 }
 
 inline uint_80 neg80(const uint_80 x)
 {
-	uint_80 r;
+	const uint_32 xlo = lo32(x.lo); const uint_64 xhi = upsample((uint_32)(x.hi), hi32(x.lo));
+	uint_32 rlo; uint_64 rhi;
 #ifdef PTX_ASM
-	const uint32 xhi = x.hi;
-	uint32 rhi;
-	asm volatile ("sub.cc.u64 %0, 0, %1;" : "=l" (r.lo) : "l" (x.lo));
-	asm volatile ("subc.u32 %0, 0, %1;" : "=r" (rhi) : "r" (xhi));
-	r.hi = (uint_16)(rhi);
+	asm volatile ("sub.cc.u32 %0, 0, %1;" : "=l" (rlo) : "l" (xlo));
+	asm volatile ("subc.u64 %0, 0, %1;" : "=r" (rhi) : "r" (xhi));
 #else
-	r.lo = -x.lo; r.hi = -x.hi - ((x.lo != 0) ? 1 : 0);
+	rlo = -x.lo; rhi = -xhi - ((x.lo != 0) ? 1 : 0);
 #endif
+	uint_80 r; r.lo = upsample(lo32(rhi), rlo); r.hi = (uint_16)(hi32(rhi));
 	return r;
 }
 
@@ -127,14 +126,14 @@ inline uint_96 madd96(const uint_96 z, const uint_64 x, const uint_32 y)
 {
 	uint_96 r;
 #ifdef PTX_ASM
-	const uint32 xl = lo32(x), xh = hi32(x);
-	uint32 c0 = lo32(z.s0), c1 = hi32(z.s0), c2 = z.s1;
+	const uint_32 xl = lo32(x), xh = hi32(x);
+	uint_32 c0 = lo32(z.lo), c1 = hi32(z.lo), c2 = z.hi;
 	asm volatile ("mad.lo.cc.u32 %0, %1, %2, %3;" : "=r" (c0) : "r" (xl), "r" (y), "r" (c0));
 	asm volatile ("madc.hi.cc.u32 %0, %1, %2, %3;" : "=r" (c1) : "r" (xl), "r" (y), "r" (c1));
 	asm volatile ("addc.u32 %0, %1, 0;" : "=r" (c2) : "r" (c2));
 	asm volatile ("mad.lo.cc.u32 %0, %1, %2, %3;" : "=r" (c1) : "r" (xh), "r" (y), "r" (c1));
 	asm volatile ("madc.hi.u32 %0, %1, %2, %3;" : "=r" (c2) : "r" (xh), "r" (y), "r" (c2));
-	r.s0 = upsample(c1, c0); r.s1 = c2;
+	r.lo = upsample(c1, c0); r.hi = c2;
 #else
 	r.lo = z.lo + x * y; r.hi = z.hi + (uint_32)(mul_hi(x, (uint_64)(y))) + ((r.lo < z.lo) ? 1 : 0);
 #endif
@@ -446,7 +445,7 @@ void init_factors(__global const sz_t * restrict const prime_count,
 	ext_vector[id] = (uint_64_2)(c2.lo, c2.hi);
 	const uint_80 c2p = div80(c2, p);
 	q_vector[id] = (uint_64_2)(c2p.lo, c2p.hi);
-	const uint_80 cn = c; //sub80(p, c);
+	const uint_80 cn = sub80(p, c);
 	cn_vector[id] = (uint_64_2)(cn.lo, cn.hi);
 }
 
@@ -491,7 +490,6 @@ void check_factors(__global const sz_t * restrict const prime_count,
 	{
 		const uint_64_2 cnegl = cn_vector[id];
 		uint_80 cn; cn.lo = cnegl.s0; cn.hi = (uint_16)(cnegl.s1);
-		cn = sub80(p, cn);
 		if (!eq80(c, cn))
 		{
 			const sz_t error_index = atomic_inc(error_count);

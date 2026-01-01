@@ -70,46 +70,45 @@ static const char * const src_ocl_sieve79 = \
 "\n" \
 "inline uint_80 add80(const uint_80 x, const uint_80 y)\n" \
 "{\n" \
-"	uint_80 r;\n" \
+"	const uint_32 xlo = lo32(x.lo); const uint_64 xhi = upsample((uint_32)(x.hi), hi32(x.lo));\n" \
+"	const uint_32 ylo = lo32(y.lo); const uint_64 yhi = upsample((uint_32)(y.hi), hi32(y.lo));\n" \
+"	uint_32 rlo; uint_64 rhi;\n" \
 "#ifdef PTX_ASM\n" \
-"	const uint32 xhi = x.hi, yhi = y.hi;\n" \
-"	uint32 rhi;\n" \
-"	asm volatile (\"add.cc.u64 %0, %1, %2;\" : \"=l\" (r.lo) : \"l\" (x.lo), \"l\" (y.lo));\n" \
-"	asm volatile (\"addc.u32 %0, %1, %2;\" : \"=r\" (rhi) : \"r\" (xhi), \"r\" (yhi));\n" \
-"	r.hi = (uint_16)(rhi);\n" \
+"	asm volatile (\"add.cc.u32 %0, %1, %2;\" : \"=r\" (rlo) : \"r\" (xlo), \"r\" (ylo));\n" \
+"	asm volatile (\"addc.u64 %0, %1, %2;\" : \"=l\" (rhi) : \"l\" (xhi), \"l\" (yhi));\n" \
 "#else\n" \
-"	r.lo = x.lo + y.lo; r.hi = x.hi + y.hi + ((r.lo < x.lo) ? 1 : 0);\n" \
+"	rlo = xlo + ylo; rhi = xhi + yhi + ((rlo < xlo) ? 1 : 0);\n" \
 "#endif\n" \
+"	uint_80 r; r.lo = upsample(lo32(rhi), rlo); r.hi = (uint_16)(hi32(rhi));\n" \
 "	return r;\n" \
 "}\n" \
 "\n" \
 "inline uint_80 sub80(const uint_80 x, const uint_80 y)\n" \
 "{\n" \
-"	uint_80 r;\n" \
+"	const uint_32 xlo = lo32(x.lo); const uint_64 xhi = upsample((uint_32)(x.hi), hi32(x.lo));\n" \
+"	const uint_32 ylo = lo32(y.lo); const uint_64 yhi = upsample((uint_32)(y.hi), hi32(y.lo));\n" \
+"	uint_32 rlo; uint_64 rhi;\n" \
 "#ifdef PTX_ASM\n" \
-"	const uint32 xhi = x.hi, yhi = y.hi;\n" \
-"	uint32 rhi;\n" \
-"	asm volatile (\"sub.cc.u64 %0, %1, %2;\" : \"=l\" (r.lo) : \"l\" (x.lo), \"l\" (y.lo));\n" \
-"	asm volatile (\"subc.u32 %0, %1, %2;\" : \"=r\" (rhi) : \"r\" (xhi), \"r\" (yhi));\n" \
-"	r.hi = (uint_16)(rhi);\n" \
+"	asm volatile (\"sub.cc.u32 %0, %1, %2;\" : \"=r\" (rlo) : \"r\" (xlo), \"r\" (ylo));\n" \
+"	asm volatile (\"subc.u64 %0, %1, %2;\" : \"=l\" (rhi) : \"l\" (xhi), \"l\" (yhi));\n" \
 "#else\n" \
-"	r.lo = x.lo - y.lo; r.hi = x.hi - y.hi - ((x.lo < y.lo) ? 1 : 0);\n" \
+"	rlo = xlo - ylo; rhi = xhi - yhi - ((xlo < ylo) ? 1 : 0);\n" \
 "#endif\n" \
+"	uint_80 r; r.lo = upsample(lo32(rhi), rlo); r.hi = (uint_16)(hi32(rhi));\n" \
 "	return r;\n" \
 "}\n" \
 "\n" \
 "inline uint_80 neg80(const uint_80 x)\n" \
 "{\n" \
-"	uint_80 r;\n" \
+"	const uint_32 xlo = lo32(x.lo); const uint_64 xhi = upsample((uint_32)(x.hi), hi32(x.lo));\n" \
+"	uint_32 rlo; uint_64 rhi;\n" \
 "#ifdef PTX_ASM\n" \
-"	const uint32 xhi = x.hi;\n" \
-"	uint32 rhi;\n" \
-"	asm volatile (\"sub.cc.u64 %0, 0, %1;\" : \"=l\" (r.lo) : \"l\" (x.lo));\n" \
-"	asm volatile (\"subc.u32 %0, 0, %1;\" : \"=r\" (rhi) : \"r\" (xhi));\n" \
-"	r.hi = (uint_16)(rhi);\n" \
+"	asm volatile (\"sub.cc.u32 %0, 0, %1;\" : \"=l\" (rlo) : \"l\" (xlo));\n" \
+"	asm volatile (\"subc.u64 %0, 0, %1;\" : \"=r\" (rhi) : \"r\" (xhi));\n" \
 "#else\n" \
-"	r.lo = -x.lo; r.hi = -x.hi - ((x.lo != 0) ? 1 : 0);\n" \
+"	rlo = -x.lo; rhi = -xhi - ((x.lo != 0) ? 1 : 0);\n" \
 "#endif\n" \
+"	uint_80 r; r.lo = upsample(lo32(rhi), rlo); r.hi = (uint_16)(hi32(rhi));\n" \
 "	return r;\n" \
 "}\n" \
 "\n" \
@@ -139,14 +138,14 @@ static const char * const src_ocl_sieve79 = \
 "{\n" \
 "	uint_96 r;\n" \
 "#ifdef PTX_ASM\n" \
-"	const uint32 xl = lo32(x), xh = hi32(x);\n" \
-"	uint32 c0 = lo32(z.s0), c1 = hi32(z.s0), c2 = z.s1;\n" \
+"	const uint_32 xl = lo32(x), xh = hi32(x);\n" \
+"	uint_32 c0 = lo32(z.lo), c1 = hi32(z.lo), c2 = z.hi;\n" \
 "	asm volatile (\"mad.lo.cc.u32 %0, %1, %2, %3;\" : \"=r\" (c0) : \"r\" (xl), \"r\" (y), \"r\" (c0));\n" \
 "	asm volatile (\"madc.hi.cc.u32 %0, %1, %2, %3;\" : \"=r\" (c1) : \"r\" (xl), \"r\" (y), \"r\" (c1));\n" \
 "	asm volatile (\"addc.u32 %0, %1, 0;\" : \"=r\" (c2) : \"r\" (c2));\n" \
 "	asm volatile (\"mad.lo.cc.u32 %0, %1, %2, %3;\" : \"=r\" (c1) : \"r\" (xh), \"r\" (y), \"r\" (c1));\n" \
 "	asm volatile (\"madc.hi.u32 %0, %1, %2, %3;\" : \"=r\" (c2) : \"r\" (xh), \"r\" (y), \"r\" (c2));\n" \
-"	r.s0 = upsample(c1, c0); r.s1 = c2;\n" \
+"	r.lo = upsample(c1, c0); r.hi = c2;\n" \
 "#else\n" \
 "	r.lo = z.lo + x * y; r.hi = z.hi + (uint_32)(mul_hi(x, (uint_64)(y))) + ((r.lo < z.lo) ? 1 : 0);\n" \
 "#endif\n" \
@@ -458,7 +457,7 @@ static const char * const src_ocl_sieve79 = \
 "	ext_vector[id] = (uint_64_2)(c2.lo, c2.hi);\n" \
 "	const uint_80 c2p = div80(c2, p);\n" \
 "	q_vector[id] = (uint_64_2)(c2p.lo, c2p.hi);\n" \
-"	const uint_80 cn = c; //sub80(p, c);\n" \
+"	const uint_80 cn = sub80(p, c);\n" \
 "	cn_vector[id] = (uint_64_2)(cn.lo, cn.hi);\n" \
 "}\n" \
 "\n" \
@@ -503,7 +502,6 @@ static const char * const src_ocl_sieve79 = \
 "	{\n" \
 "		const uint_64_2 cnegl = cn_vector[id];\n" \
 "		uint_80 cn; cn.lo = cnegl.s0; cn.hi = (uint_16)(cnegl.s1);\n" \
-"		cn = sub80(p, cn);\n" \
 "		if (!eq80(c, cn))\n" \
 "		{\n" \
 "			const sz_t error_index = atomic_inc(error_count);\n" \
